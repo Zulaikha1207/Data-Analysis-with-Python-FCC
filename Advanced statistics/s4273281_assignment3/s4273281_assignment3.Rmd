@@ -1,0 +1,244 @@
+---
+title: "Assignment3"
+author: "Zulikah Latief (s4273281)"
+date: "12/12/2021"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r}
+#clear list
+rm(list=ls())
+
+#set working directory
+setwd('C:/Users/user/Documents/MSC AI/MSC AI YEAR 2/Adv stats/R programming/s4273281_assignment3')
+
+#load libraries
+library(plyr)
+library(plotfunctions)
+library(mgcv)    # for GAMs
+library(itsadug) # for visualization of GAMs
+```
+
+## PART I: Data
+
+```{r, echo=TRUE}
+
+#load data
+dat <- read.table('data.txt', header= TRUE)
+View(dat)
+
+#change rating to familiarity score
+dat$Familiarity <- ifelse(dat$Rating > 4, 1, 0)
+```
+
+## PART II: Analysis
+
+```{r, echo=TRUE}
+#center age variable
+dat$cAge <- dat$Age - 40
+```
+
+**a) Setup a generalized linear model that models the effect of age on idiom familiarity. You can ignore the effect of Condition for this question.**
+
+```{r, echo=TRUE}
+lm1 <- glm(Familiarity ~ cAge , data=dat, family=binomial)
+summary(lm1)
+```
+
+**b)Setup a generalized additive model that includes exactly the same formula as model lm1 to model the effect of age on idiom familiarity. Compare the two summaries. Describe in your report what the two models predict for the effect of age on the idiom familiarity.**
+
+```{r, echo=TRUE}
+g1 <- gam(Familiarity ~ cAge, data=dat, family=binomial)
+summary(g1)
+summary(lm1)
+```
+
+Both the models show the main effects of age on familiarity. The intercept represents the mean log odds of familiarity success (familiarity=1) when the age is 40. The positive coefficient of the cAge tells us that the probability of familiarity success increases with age. So for a unit increase in age, the log odds of familiarity success increases by a value of 0.0321222. This is represented in both the models. Moreover, the z-value indicates that the estimates made by the models are significantly different from taking the value zero.
+
+**Setup a generalized additive model that includes a potentially nonlinear effect of age on idiom familiarity.**
+
+```{r, echo=TRUE}
+g2 <- gam(Familiarity ~ s(cAge) , data=dat, family=binomial)
+```
+
+**Inspect the summary of model g2. Explain in your report what the summary tells us about the fitted regression line.**
+
+```{r,echo=TRUE}
+#summary of model g2
+summary(g2)
+
+#visualize fitted effects
+plot_smooth(g2, view="cAge")
+```
+
+The parametric coefficients list the linear variables of the model. Note that for the model g1, the parametric coefficients also included the cAge variable, whereas for the g2 model, since we map the cAge variable with a smooth function, the model includes this as a non-linear effect. The intercept denotes the mean value of familiarity score on a log odds scale at the average age of 40 (cAge is 0). The corresponding z-value indicates that the estimate is significantly different from being zero. 
+
+Under the smooth terms we have the non-linear effect of the cAge variable. EDF value of 8 indicates that the effect of cAge is non-linear and we should expect a wiggly curve (as seen in the plot). This edf value is significantly different from 1, which would denote a straight line or a linear relationship. Furthermore, the p-value corresponding to cAge shows that it is a significant predictor. The r-sq is a goodness of fit measure that shows a very low value of 0.0578, which means that the model can only account for ~5 percent of that data.
+
+## Question 2: Visualization
+
+**Explain the difference between the two plots. What is represented by the two plots?**
+
+Plot 1 shows the partial effects of the model. This plot shows the effect of the smooth term cAge on the model prediction (familiarity score). Plot 2 shows the fitted effect, which is the same as the partial effects in this case because we have only one smooth term. The effect of the smooth term (cAge) accounts for the overall prediction of the model.  If there was more than one smooth term then the plot corresponding to each of the smooth terms would show the partial effect of that variable on the model prediction. And by summing up all the partial effects, one can get the overall fitted effect of the model.
+
+```{r, echo=TRUE}
+par(mfrow=c(1,2))
+
+# PLOT 1
+plot(g2)
+
+# PLOT 2
+plot_smooth(g2, view="cAge")
+```
+
+**Compare models g2 and g2b by printing the summaries and plotting the regression lines. Explain how centering affects regression lines differently in linear regression models and GAMs. How does this relate to the interpretation of the intercept?**
+
+From the plots, it can be seen that centering does not affect the regression lines in GAMS. The intercept represents the average log odds of familiarity success when age is centered at the mean.  
+
+On the other hand, for linear regression models, the intercept represents the avg value of y when x takes on a value of zero. Thus, for linear regression models, the predictors are not centered by default, instead centering is done manually (for example: dat$cAge <- dat$Age - 40). By doing so, the interpretation of the intercept becomes similar to the intercept of the GAM model. Furthermore, the plots become more interpretable. 
+
+
+```{r, echo=TRUE}
+#using Age instead of cAge
+g2b <- gam(Familiarity ~ s(Age) , data=dat, family=binomial)
+summary(g2b)
+summary(g2)
+
+# PLOT 1
+plot(g2)
+
+# PLOT 2
+plot_smooth(g2, view="cAge")
+
+# PLOT 1
+plot(g2b)
+
+# PLOT 2
+plot_smooth(g2b, view="Age")
+
+```
+
+## Question 3: Increasing complexity
+
+**To investigate whether the experimental study (column Condition) influenced the idiom familiarity, extend the GAM model g2b with a main effect of the predictor Condition.**
+
+```{r, echo=TRUE}
+#convert condition to a factor
+dat$Cond <- as.factor(ifelse(dat$Condition=='Study1', "Study1", "Study2"))
+levels(dat$Cond)
+
+#extended GAM model with condition as a main effect
+g3 <- gam(Familiarity ~ Cond + s(Age) , data=dat, family=binomial)
+```
+
+**a)Inspect the summary and visualize the model’s estimates using the code below. Explain what the intercept represents.**
+
+After adding Cond as a main effect, the summary shows an additional term, namely, CondStudy2 under the parametric coefficient terms. The intercept represents the constant term that must be added to the predicted value every time you increase the age by 1 unit for the reference condition study1. 
+
+-----The intercept represents the mean familiarity score in log odds for study1 when the age is centered at 0. Thus, it represents the intercept adjustment when the condition is set to study1.----
+
+The corresponding negative estimate for CondStudy2 indicates that a unit increase in Age decreases the familiarity score by a value of 0.56013 on the log scale for condition study2 in contrast to the reference condition study1. This lower value for familiarity score over age in study2 is depicted in the plot2.
+
+```{r, echo=TRUE}
+#summary of g3
+summary(g3)
+
+par(mfrow=c(1,2))
+
+# PLOT 1
+plot(g3)
+
+# PLOT 2
+plot_smooth(g3, view="Age", plot_all="Cond")
+```
+
+
+**b)In this specific case, when we did not include random effects or other features of the GAM model, we could use the function anova to compare whether including Condition improved the modelfit. Discuss your conclusion in your report. Which model is preferred?**
+
+```{r, echo=TRUE}
+anova(g2b,g3, test="Chisq")
+```
+
+A chi-square test is performed to examine whether including Condition improves the model fit. The test shows a significant difference between the models, X2 (0.99794) = 353.95, p < 2.2e-16. It can be seen that by spending one additional degree of freedom, the deviance drops significantly. This means that our model 2 with 'condition' variable as a main effect fits the data better than model 1. Thus model 2 (g3) is preferred.
+
+**c)Include the (potentially nonlinear) interaction between Condition and age. Inspect the summary and visualize the regression lines (see the code provided for model g3). Explain what the intercept represents.**
+
+The intercept represents the increase in the mean familiarity score for study1 when the age is centered at 0. The negative estimate for CondStudy2 represents the decrease in mean familiarity score by 0.45817 (in the log scale) from study1 to study2.
+
+```{r, echo=TRUE}
+g4 <- gam(Familiarity ~ Cond + s(Age, by = Cond) , data=dat, family=binomial)
+summary(g4)
+
+par(mfrow=c(1,2))
+
+# PLOT 1
+plot(g4)
+
+# PLOT 2
+plot_smooth(g4, view="Age", plot_all="Cond")
+```
+
+**Discuss what you can conclude from the summary with respect to the effects of Condition and Age and their interaction on the idiom familiarity.**
+
+The parametric coefficients represent the adjustments in the intercept for study1 (intercept) and study2 in comparison to study1 (CondStudy2). The smooth terms derived by the interaction between age and condition shows that both terms differ significantly from 0. 
+
+**d)Again use anova to test whether the interaction is significantly contributing. What is your conclusion?**
+
+A chi-square test is performed to examine whether including the interaction between Condition and age improves the model fit. The test shows a significant difference between the models, X2 (8.7662) = 360.69, p < 2.2e-16. It can be seen that by spending 9 additional degree of freedom, the deviance drops significantly. This means that our model 2 with the interaction term fits the data better than model 1. Thus model 2 (g4) is preferred.
+
+```{r, echo=TRUE}
+anova(g3,g4, test="Chisq")
+```
+
+## Question 4: Continuous predictors
+
+```{r, echo=TRUE}
+dat$logFrequency <- log(dat$Frequency+.1)
+# May take somewhat more time to run:
+g5 <- gam(Familiarity ~ Cond + te(Age, logFrequency, by=Cond), 
+          data=dat, family=binomial)
+
+par(mfrow=c(1,2), mar=c(5.1,4.1,3.1,4.1))
+
+# PLOT 1
+pvisgam(g5, select=1, view=c("Age", "logFrequency"), 
+        dec=1, zlim=c(-7,3), 
+        main="Study 1")
+pvisgam(g5, select=2, view=c("Age", "logFrequency"), 
+        dec=1, zlim=c(-7,3), 
+        main="Study 2")
+```
+
+```{r, echo=TRUE}
+par(mfrow=c(1,2), mar=c(5.1,4.1,3.1,4.1))
+
+range(dat$Age[dat$Condition=='Study2'])
+
+# PLOT 2
+fvisgam(g5, view=c("Age", "logFrequency"), 
+        cond=list(Cond="Study1"),
+        dec=1, zlim=c(-6,4), 
+        main="Study 1")
+# PLOT 2
+fvisgam(g5, view=c("Age", "logFrequency"), 
+        cond=list(Cond="Study2"),
+        dec=1, zlim=c(-6,4), 
+        main="Study 2")
+```
+
+**a)What is the difference between the plots generated with pvisgam and those generated with fvisgam? Interpret the plots and explain in words how the logFrequency and Age influence idiom familiarity.**
+
+pvisgam() plots the partial effects whereas the fvisgam() plots the summed effects. Therefore, fvisgam() gives the additive effect of the smooth terms.
+
+For study1, as logFrequency increases, the log odds of familiarity success increases with age. Moreover, the slope is steeper for for lower logFrequency values and age. The slope becomes less steep as the age and frequency increases.
+
+For study2, the slope more gentle than for study1. It can be seen that, the log odds of the familiarity success increases with the logFrequency and age upto a certain point. Beyond the age of 75, the log odds of the familiarity score reduce even with increased logFrequency values. This can be due to the fact that for study2 the age of all participants falls under 76. Moreover, the effect of age and logfrequency is more non-linear for study2 in comparison to study1. There is a cluster around the age of 40-65 with logFrequency ranging from 6-8, where the log odds of familiarity success are at their highest.
+
+
+**b)Instead of the function te() we could have use the function ti() for modeling the interaction surface. Provide the formula of a model that captures the same interaction between Age, logFrequency and Condition, as in model g5, but instead uses ti() rather than te().**
+
+```{r, echo=TRUE}
+g6 <- gam(Familiarity ~ Cond + s(Age) + s(logFrequency) + ti(Age, logFrequency, by=Cond), data=dat, family=binomial)
+```

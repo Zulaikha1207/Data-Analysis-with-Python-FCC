@@ -1,0 +1,401 @@
+---
+title: "Final Assignment<br/>Advanced Statistical Modeling 2021-2022"
+author: "Zulikah Latief, s4273281"
+date: "Start date: 26th January/ 3rd February 2022"
+output: html_document
+---
+
+https://statisticsbyjim.com/regression/choose-linear-nonlinear-regression/**
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 4, fig.height = 4)
+rm(list=ls())
+```
+
+# Loading data and packages
+
+Set your working directory:
+
+```{r}
+setwd("C:/Users/user/Documents/MSC AI/MSC AI YEAR 2/Adv stats/R programming/s4273281_FinalAssignment")
+
+rm(list=ls())
+```
+
+Load packages:
+```{r include=FALSE}
+library(ggplot2)
+library(lme4)
+library(mgcv)
+library(itsadug)
+library(dplyr)
+library(plyr)
+library(plotfunctions)
+# ... other packages
+```
+
+Load data:
+
+```{r}
+load("D13A.rda")
+
+# print the data description in R console:
+cat(description)
+# write the data description to a file:
+writeLines(description, "description.txt", sep = "")
+
+# head of data:
+head(dat)
+str(dat)
+```
+
+The description is added to make the data set less abstract. However, if you find the description confusing, feel free to ignore it.
+
+<p><br/></p>
+
+# Descriptive statistics
+The study contains 60 subjects, 30 polish and 30 Dutch natives. The study has a pre-test stage and a post-test stage wherein subjects are given artificially generated letter strings (items) of type word and non-word. There are a total of 52 unique items. Each subject's accuracy was recorded for correctly identifying the type (word/ non-word) of the presented item. During the pre-test, each participant undergoes 30 trials and in each trial they are presented with an item that can be of type word or non-word. In total, each subject has 60 trials (30 pretest and 30 post test). Note that in the post-test, they are given a different item. Additionally, subjects s048 and s049 were not a part of the pretest stage, and thus each undergo a total of 30 trials in the post-test only. Therefore, there are a total of 3540 trials (60 trails for each of 58 subjects and 30 trials for each of the 2 subjects). Half of these trials, i.e., 1770 were of type word and the rest were of the type non-word. Furthermore, each subject takes part in both conditions of the study, i.e., word and non-word which makes this a within-subject study.
+
+```{r}
+table(dat$Subject, dat$Test)
+table(dat$Subject, dat$Language)
+tail(table(dat$Subject, dat$Trial, dat))
+table(dat$Language)
+table(dat$Test)
+table(dat$Subject)
+table(dat$Trial)
+table(dat$Item)
+unique(dat$Item)
+table(dat$Type)
+table(dat$ACC, dat$Type)
+unique(dat$Subject)
+table(dat$Subject, dat$Type)
+table(dat$Item, dat$Test)
+```
+Since the items differ in the pre test and post test stage (but still have the same item name), it is good to differentiate between these items. 
+
+```{r}
+#subset data based on condition
+study1<- subset(dat, dat$Test == "pre") 
+study2<- subset(dat, dat$Test == "post") 
+
+#differentiate between subject IDs for the two conditions
+study2$Item <- gsub('i', 's', study2$Item)
+
+#merge subsets
+dat2 <- rbind(study1, study2)
+table(dat2$Item, dat2$Test)
+
+```
+
+Note the data has 106 NaN values for accuracy. We will remove these values as they account for a small percentage of the total trials.
+
+```{r}
+#there are 106 values in data 
+sum(is.na(dat2))
+
+#all of them are more the accuracy column
+sum(is.na(dat2$ACC))
+
+#removing the NA values
+dat2 <- na.omit(dat2)
+```
+Now let's inspect the data in more depth. Given the response variable is binary, we will first add A1 and A0 columns which are count pairs for accuracy =1 and accuracy =0 respectively. 
+
+```{r}
+dat2 <- ddply(dat2, c("Subject", "Test", "Language", "Trial", "Item", "Type", "ACC"),
+              summarise,
+             A0 = sum(ACC==0),
+             A1 = sum(ACC==1))
+head(dat2)
+```
+
+
+## Visualize data
+First calculate the subject wise mean for the different experimental conditions, i.e., Test and Type. Although each subject has only one language, this variable is also added for reference.
+```{r}
+avg1 <- ddply(dat2, c("Subject", "Test", "Type", "Language"),
+              summarise,
+             meanACC = mean(A1))
+head(avg1)
+```
+Next, the overall means for the three conditions, i.e., 'Test', 'Type' and 'Language' is calculated.
+
+```{r}
+avg2 <- ddply(avg1, c("Test", "Type", "Language"),
+              summarise,
+             meanACC = mean(meanACC))
+head(avg2)
+```
+Calculating the standard error on the means calculated.
+
+```{r}
+avg2 <- ddply(avg1, c("Test", "Type", "Language"), 
+              summarize,
+              SE = se(meanACC),
+              meanACC = mean(meanACC))
+              
+head(avg2)
+```
+
+
+```{r}
+ggplot(avg2, aes(Type, meanACC, fill = Test)) +
+  geom_col(position = position_dodge(width = 1), color = "gray50") +
+  geom_errorbar(aes(ymin = meanACC - SE, 
+                    ymax = meanACC + SE), width = 0.25,
+                position = position_dodge(width = 1)) +
+  scale_fill_manual(values = c("darkseagreen3", "coral2")) +
+  facet_grid(.~Language, switch = "x") +
+  theme_bw() +
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        panel.border = element_blank(),
+        panel.spacing = unit(0, "points"),
+        axis.line = element_line())
+```
+
+The above graph shows the mean accuracy of Dutch and Polish subjects in the lexical decision task. For native Dutch speakers, the mean accuracy for type word and non-word during the pre test stage is lower when compared to post test stage. The mean accuracy for non-word type increases by a relatively small factor of ~0.1 in the post test stage. Interestingly, for type 'word', there is a dramatic increase in mean accuracy from ~0.3 (pre-test) to ~0.75 (post-test). Overall, the increase in mean accuracy from pre to post test is visible in both 'word' and 'non-word' type, however, the increase is highly significant for type 'word'.
+
+For native Polish speakers, the mean accuracy of type non-word is high at ~0.57 during the pre-test stage. However, this accuracy falls to ~0.49 during the post-test stage. For type 'word' there is a significant increase of ~0.2 in mean accuracy from pre test to post test stage. However, this increase is not as dramatic as seen in Dutch native speakers.
+
+Overall, native Polish speakers show a higher mean accuracy for all 'Type' and 'Test' categories. Specifically, native Polish speakers have a significantly higher mean accuracy for both 'word' and 'non-word' in the pre-test when compared to native Dutch speakers. However, the increase in mean accuracy during the post test stage for both categories of 'Type' is more significant for Dutch speakers. Moreover, the accuracy drops rather than increases for native Polish speakers during the post-test stage for type 'non-word'. 
+
+```{r}
+#Average accuracy by trial by language
+avg_trial <- ddply(dat2, c("Trial", "Language"), 
+             summarise,
+            trial_meanACC = mean(A1))
+head(avg_trial)
+```
+
+```{r}
+#plot for language
+emptyPlot(xlim=c(1, 30), ylim= c(0,1)) 
+title(main="Average accuracy over trials for Dutch and Polish", xlab="Trial", ylab="mean accuracy")
+
+points(avg_trial$Trial, avg_trial$trial_meanACC, 
+       pch=16, col=ifelse(avg_trial$Language=='Dutch', 4, 1))
+
+legend_margin('centerright', legend = c("Dutch", "Polish"),
+       col=c(4, 1), pch = c(16, 16))
+
+```
+
+# LME Analysis
+
+For this part, a LME model will be used since we have repeated measures for subjects and items. Moreover, the response variable is binary which means that GLME can be used. The fixed effects are kept at their maximal by including all interactions between the different experimental manipulations (i.e., Type, Language, Test). For now, I will first focus on determining the structure of random effects. 
+
+### RANDOM INERCEPTS 
+
+```{r}
+
+table(dat2$Subject, dat2$Item, dat2$Test)
+```
+
+
+```{r}
+m0 <- glmer( ACC ~ Language * Type * Test  + (1|Subject) + (1|Item), data = dat2, family = binomial)
+
+summary(m0)
+```
+```{r}
+#Extracting the random effects for subject
+re <- ranef(m0)[['Subject']]
+head(re)
+
+#plot for avg accuracy by subjects
+acc <- tapply(dat2$ACC, list(dat2$Subject), mean)
+emptyPlot(range(re[,1]), ylim = c(0,1),
+          xlab="random intercept", ylab="mean accuracy",
+          xmark=TRUE, ymark=TRUE, las=1)
+points(re[,1], acc, pch=16, col=alpha("steelblue"))
+
+#qqnorm showing distribution of different subjects
+qqnorm(re[,1])
+qqline(re[,1])
+```
+### Random intercept for subjects interpreation
+
+The random intercepts for the subjects show two distinct trends (almost lines) of mean accuracy. This tells me that there might be two different types of subjects, i.e., native Dutch and native Polish speakers that show different average accuracy values. The qqnorm plot also shows two trends in the middle of the distribution. It can also be seen that there are few a points distributed at either ends of the tail. This can denote subjects that on an average have a lower accuracy (left end of the distribution) and subjects that have a higher mean accuracy (right end). The qqplot does not show any right or left skeweness. Additionally, the model summary shows a relatively lower variance value for random intercept of subjects. This suggests that not much variance can be explained by difference in subjects based on their average mean accuracy. However, by adding random slopes we can further make conclusions about this.
+
+```{r}
+#Extracting the random effects for items
+reitem <- ranef(m0)[['Item']]
+head(reitem)
+
+#plot for avg accuracy by items
+acc_item <- tapply(dat2$ACC, list(dat2$Item), mean)
+emptyPlot(range(reitem[,1]), ylim = c(0,1),
+          xlab="random intercept", ylab="mean accuracy",
+          xmark=TRUE, ymark=TRUE, las=1)
+points(reitem[,1], acc_item, pch=16, col=alpha("steelblue"))
+
+#qqnorm showing distribution of different items
+qqnorm(reitem[,1])
+qqline(reitem[,1])
+```
+### Random intercept for items interpreation
+
+The random intercepts for items show two distinct trends (almost curves) of mean accuracy. This trend is much more clear at lower to mid accuracy values  (0 to ~0.6). This tells me that there might be two different types of items, i.e., word and non-word, that show different average accuracy values. However, the distinction in the accuracy between the two grups of items diminishes as the average accuracy reaches 1. The qqnorm plot also shows a slight  trend of two distinct values in the middle of the distribution. It can also be seen that there are few a points distributed at either ends of the tail. However, on the lower end, there are a few clusters of points. This is inline with the scatter plot discussed above. Lower mean accuracy values show a more distinct cluster of items. The right end shows a few higher values than the normal distribution which may indicate that some items (or some types (word or non-word)) show a higher mean accuracy than other items. Additionally, the model summary shows a high variance value for random intercept of items. This suggests that the difference in accuracy due to different items attributes to the variance in the data. By adding random slopes we can further make conclusions about this.
+
+<p><br/></p>
+
+
+### RANDOM SLOPES 
+
+(1 + Trail| Subject) (0 + Trail | Subject) - This is not relevant for the current study because we are ot accessingg the chnage in accuracy of different subjects over the trials. Moreover, this would be more relevant for reaction time tasks.
+
+(1+Language|Subject) - This does not make sense to add because each subject has only one associated Language.
+
+(1 + Type | Subject) (0 + Type | Subject)
+
+(1 + Test | Subject) (0 + Test | Subject)
+
+(1 + Type| Item) (0 + Type | Item)
+
+(1 + Test | Item) (0 + Test | Item) - Does not make sense because the items were different over the two test phases.
+
+(1 + Language | Item) (0 + Language | Item)
+
+
+
+```{r}
+
+## Subject: Adding a random slope for categorical predictor Type and Test
+m1 <- glmer( ACC ~ Language * Type * Test  + (1+Type|Subject) + (1|Item), data = dat2, family = binomial)
+
+summary(m1)
+
+#verifying for correlation between random intercept and random slope for 'Type'
+m1a <- glmer( ACC ~ Language * Type * Test  + (0+Type|Subject) + (1|Item), data = dat, family = binomial)
+
+summary(m1a)
+##Correlation is equal to 1 for m1 and m1a. Thus this is probably not a useful random slope. Since the random slope and random intercept both explain the same amount of variance. 
+
+###variance is still lower m1
+
+m2 <- glmer( ACC ~ Language * Type * Test  + (1+Test|Subject) + (1|Item), data = dat2, family = binomial)
+
+summary(m2)
+
+## THE INTERCEPT representing the ACCURACY OF SUBJECTS IN PRE-TEST accounts for a variance of IS 1.256 and the random slope value which represents the difference in the average accuracy when you go from pre-test to post-test has a variance of 2.655. (std dev?) These variance values are higher than the previous m0 and m1 model in terms of random intercepts and random slopes for subject. Moreover, the random intercept associated with item has a higher variance value after adding the random slope for Test. 
+
+#verifying for correlation between random intercept and random slope for 'Test'
+m2a <- glmer( ACC ~ Language * Type * Test  + (0+Test|Subject) + (1|Item), data = dat2, family = binomial)
+
+summary(m2a)
+##correlation is insignificant at -0.06. Thus this random slop can be considered and checked through model comparison given it explains a small amount of variance. 
+
+```
+
+
+```{r}
+#checking correlations
+VarCorr(m1)
+
+#extract random effects for m1
+rem1 <- ranef(m1)[['Subject']]
+head(rem1)
+
+#visualizing the random effects
+emptyPlot(range(rem1[,1]), range(rem1[,2]), 
+     xlab="Intercept", ylab="Slope", 
+     main="(1 + Type | Subject)", 
+     xmark=TRUE, ymark=TRUE, las=1)
+points(rem1[,1], rem1[,2], pch=16, col="steelblue")
+```
+
+```{r}
+fixm1 <- fixef(m1)
+
+emptyPlot(c(-.25, 1.25), c(-3,3),
+          v=c(0,1),
+          main="(1 + Type | Subject)",
+          xlab="Type",axes=FALSE)
+axis(1, at=c(0,1), labels=c("nonword", "word"))
+axis(2, at=c(-3,3), las=1)
+for(i in 1:nrow(rem1)){
+  abline(a=fixm1[1]+rem1[i,1], b=fixm1[2]+rem1[i,2],
+         col=alpha("steelblue"))
+}
+abline(a=fixm1[1], b=fixm1[2], lwd=2)
+points(c(0,1), c(fixm1[1], fixm1[1]+fixm1[2]))
+
+```
+```{r}
+
+#model comparison to check for random effects structure for subjects
+anova(m0, m2, m3, refit= FALSE)
+```
+
+Model with the random slope, m2, is significant. The ANVOA evaluates whether or not including Test as a random slope for subject leads to a significant improvement over using just the random intercept of subject. The chi-square test results show that the effect was significant, (χ2(2)=135.37, p< 2.2e-16). 
+
+
+```{r}
+## Item: Adding a random slope for categorical predictor Type, Test and Language
+
+m3 <- glmer( ACC ~ Language * Type * Test  + (1+Test|Item) + (1|Subject), data = dat2, family = binomial)
+
+summary(m3)
+
+#The variance for item:testpre is 24 and the variance for random slope item:testpost is 49. While this accounts for a lot of variance, I'm not sure if this should be a random slope. Test should be a fixed effect right? note the variance wrt to subject random intercept increases to 3.13
+
+##verifying for correlation between random intercept and random slope for 'Test'
+
+m3a <- glmer( ACC ~ Language * Type * Test  + (0+Test|Item) + (1|Subject), data = dat, family = binomial)
+
+summary(m3a)
+
+## correlation is insignificant at 0.01. 
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+m4 <- glmer( ACC ~ Language * Type * Test  + (1+Type|Item) + (1|Subject), data = dat2, family = binomial)
+
+summary(m4)
+
+## The variance for item:testpre is 4.0155 and the variance for random slope item:testpost is 1.8636. Much lesser variance. Subject variance drops back to 0.54 and the intercept and fixed effects are more significant? idk what to make of this. Less correlation as well -0.18 which is negligible.
+
+m5 <- glmer( ACC ~ Language * Type * Test  + (1+Language|Item) + (1|Subject), data = dat2, family = binomial)
+
+summary(m5)
+
+#The random intercept and slope have a reasonable varaiance of about 6 and 1 respectively. more confused???
+
+
+##verifying for correlation between random intercept and random slope for 'Language'
+m5a <- glmer( ACC ~ Language * Type * Test  + (0+Language|Item) + (1|Subject), data = dat2, family = binomial)
+
+summary(m5a)
+
+##correlation is very high at 0.93!!!
+```
+```{r}
+#model comparision for random effects structure for items
+anova(m0, m2, refit= FALSE)
+anova(m0, m4, refit= FALSE)
+anova(m0, m5, refit= FALSE)
+
+##model m3 and m5 show significance in anova test. For m3, the ANVOA evaluates whether or not including Test as a random slope for item leads to a significant improvement over using just the random intercept of item. The chi-square test results show that the effect was significant, (χ2(2)=1096.3, p< 2.2e-16). Similarly for m5.....
+```
+```{r}
+#rabdom effect structure
+model <- glmer( ACC ~ Language * Type * Test  + (1+Test|Subject) + (1+Test|Item) , data = dat, family = binomial)
+summary(model)
+
+model1 <- glmer( ACC ~ Language * Type * Test  + (1+Test|Subject) + (1+Language|Item) , data = dat, family = binomial)
+summary(model1)
+
+anova(model, model1, m5, refit=FALSE)
+
+```
+# GAMM Analysis
+
+```{r}
+
+```
+
+Please add comments and conclusions between the R code blocks, so that we can follow what you're doing and what your conclusions are.
+
+<p><br/></p>

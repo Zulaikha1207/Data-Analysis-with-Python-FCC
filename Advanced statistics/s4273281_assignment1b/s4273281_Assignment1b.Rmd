@@ -1,0 +1,360 @@
+---
+title: "Assigment 1b"
+author: "Zulikah Latief (s4273281)"
+date: "30/11/2021"
+output: 
+  html_document:
+  toc: true
+
+---
+
+```{r load data}
+rm(list=ls())
+#load data
+load("data_herlambang.rda")
+```
+
+## Q1a
+
+**How many participants are included in the data? How many trials and blocks did each participant do?**
+
+There are 20 subjects in the data. Each of them took part in 672 trails which were divided into 14 blocks (48 trails per block). All participants took part in the 14 blocks.
+
+```{r, echo=TRUE}
+
+summary(dat)
+
+#Subjects by block
+head(table(dat$subject, dat$block))
+```
+
+**The column condition marks whether the participant received a reward in this block or not. In which blocks were rewards given? Did all participants receive a reward in the same block?**
+
+Rewards were given in alternating blocks. Blocks 2,4,6,8,10,12,14 were reward blocks. All participants received rewards only in the aforementioned reward blocks. 
+
+```{r, echo=TRUE}
+
+#Blocks by subject
+head(table(dat$condition, dat$block))
+head(table(dat$subject, dat$condition, dat$block))
+```
+
+## Q1b
+
+**Inspect the plot. Describe the effect of condition and block on the proportion of space bar being pressed.** 
+
+The plot shows the average proportion of the space bars being pressed in relation with the condition of each block. First, it is evident that the average proportion of space bar pressed in the non-reward condition is lower than the corresponding reward block. It can also be observed that for the non-reward blocks there is a gradual increase in the proportion of the space-bar pressed as the blocks progress. However, for the reward block, slight fluctuations (increase and then decrease, vice-versa) in the proportion of space bar pressed can be observed.
+
+```{r, echo=TRUE}
+#install.packages('ddply')
+#library(ddply)
+library(plyr)
+dat.cor <- droplevels(dat[dat$correct > 0,])
+
+avg <- ddply(dat.cor, c("block", "condition"), 
+             summarise,
+             space=mean(response_space=="space", na.rm=FALSE))
+
+library(plotfunctions)
+
+# increase labels and left margin:
+par(cex=1.1, mar=c(5.1,4.1,4.1,4.1))
+# setup empty plot with simplified axes:
+emptyPlot(c(0,15), c(0,1), # x-range, y-range plot
+          main="space bar pressed", # title
+          xlab="block", ylab="proportion", # labels axes
+          ymark=c(0,.5,1), las=1) # simplify y-axis
+
+# add averages:
+points(avg$block, avg$space, lwd=1.5, 
+       pch=ifelse(avg$condition=="no_reward", 15,4), 
+       bg='white', 
+       col=ifelse(avg$condition=="no_reward", 1,2 ))
+
+# add legend:
+leg <- tapply(avg$space, list(avg$condition), mean)
+text(c(16,16), leg,  labels=gsub("_", " ", names(leg)), 
+     adj=0, col=ifelse(names(leg)=="no_reward", 1,2), cex=.85, xpd=TRUE)
+```
+
+## Q1c
+
+**Calculate the mean response latency per block, condition, and response_space (only for the responses that are (partly) correct, so using data dat.cor).** 
+The mean response latency per block is:
+
+```{r, echo=TRUE}
+#avg latency per block
+avg_latency_block<- ddply(dat.cor, c("block"), 
+             summarise,
+            latency = mean(response_time_space))
+head(avg_latency_block)
+```
+
+The mean response latency per condition is:
+
+```{r, echo=TRUE}
+#split dataset based on conditions
+reward.dat <- subset(dat.cor, condition == "reward")
+no_reward.dat <- subset(dat.cor, condition == "no_reward")
+
+#avg latency for reward condition
+avg_latency_rew<- ddply(reward.dat, c("condition"), 
+             summarise,
+            latency = mean(response_time_space))
+avg_latency_rew
+
+#avg latency for no_reward condition
+avg_latency_no_rew<- ddply(no_reward.dat, c("condition"), 
+             summarise,
+            latency = mean(response_time_space))
+avg_latency_no_rew
+```
+
+The mean response latency based on response_space is:
+
+```{r, echo=TRUE}
+#avg latency per response_space
+avg_latency_resp_space<- ddply(dat.cor, c("response_space"), 
+             summarise,
+            latency = mean(response_time_space))
+head(avg_latency_resp_space)
+```
+
+The mean response latency per condition per response_space is:
+
+```{r, echo=TRUE}
+#avg latency for reward condition with response space
+avg_latency_rew_resp_space<- ddply(reward.dat, c("condition", "response_space"), 
+             summarise,
+            latency = mean(response_time_space))
+
+#avg latency for no_reward condition with response space
+avg_latency_no_rew_resp_space<- ddply(no_reward.dat, c("condition", "response_space"), 
+             summarise,
+            latency = mean(response_time_space))
+```
+
+**Visualize how the response latencies change per condition, per block, and per response condition (i.e., response_space). **
+
+```{r, echo=TRUE}
+
+#split dataset based on response-space
+space.dat <- subset(dat.cor, response_space == "space")
+no_space.dat <- subset(dat.cor, response_space == "None")
+
+x<- ddply(space.dat, c("condition", "response_space", 'block'), 
+             summarise,
+            latency = mean(response_time_space))  
+
+y<- ddply(no_space.dat, c("condition", "response_space", 'block'), 
+             summarise,
+            latency = mean(response_time_space)) 
+
+#Plot for response-space set to space
+# increase labels and left margin:
+par(cex=1.1, mar=c(5.1,4.1,4.1,4.1))
+# setup empty plot with simplified axes:
+emptyPlot(c(0,15), c(3000,5000), # x-range, y-range plot
+          main="latency measured for space bar pressed", # title
+          xlab="block", ylab="resp time", # labels axes
+           las=1) # simplify y-axis
+
+# add averages:
+points(x$block, x$latency, lwd=1.5, 
+       pch=ifelse(x$condition=="no_reward", 15,4), 
+       bg='white', 
+       col=ifelse(x$condition=="no_reward", 1,2 ))
+
+# add legend:
+leg <- tapply(x$latency, list(x$condition), mean)
+text(c(16,16), leg,  labels=gsub("_", " ", names(leg)), 
+     adj=0, col=ifelse(names(leg)=="no_reward", 1,2), cex=.85, xpd=TRUE)
+
+
+#Plot for response-space set to none
+# increase labels and left margin:
+par(cex=1.1, mar=c(5.1,4.1,4.1,4.1))
+# setup empty plot with simplified axes:
+emptyPlot(c(0,15), c(3000,5000), # x-range, y-range plot
+          main="latency measured for no space bar pressed", # title
+          xlab="block", ylab="resp time", # labels axes
+           las=1) # simplify y-axis
+
+# add averages:
+points(y$block, y$latency, lwd=1.5, 
+       pch=ifelse(y$condition=="no_reward", 15,4), 
+       bg='white', 
+       col=ifelse(y$condition=="no_reward", 1,2 ))
+
+# add legend:
+leg <- tapply(y$latency, list(y$condition), mean)
+text(c(16,16), leg,  labels=gsub("_", " ", names(leg)), 
+     adj=0, col=ifelse(names(leg)=="no_reward", 1,2), cex=.85, xpd=TRUE)
+```
+
+## Q2a
+
+**Plot the distribution of the reaction times using a QQ-plot (functions qqnorm and qqline). Include the plot and the code in your report.**
+
+```{r, echo=TRUE}
+qqnorm(dat.cor$response_time_space)
+qqline(dat.cor$response_time_space)
+```
+
+**Are the reaction times following a normal distribution? Describe how you can see in the QQ-plot whether the reaction times follow a normal distribution.**
+
+The reaction time does not follow a strict normal distribution. It is skewed on both the tail ends. The initial observations that cluster close to around 0ms have higher values which can be attributed to the fact that reaction times cannot be zero. Furthermore, the qqplot shows variance with respect to the normal distribution from around 1000ms-2500ms where there are higher number of observations. Around the range of 3000-4000ms, the reaction times seem to follow a normal distribution. Finally, the skewness at the right tail of the distribution (at around 4500ms-5000ms) indicates that there are more observations at this interval. Overall, the data does not follow a normal distribution and this can be seen evidently around 2000-2500ms and around 4000ms-5000ms. This can be due to the fact that the multiple categorical variables(condition, response_space) having very different distributions.
+
+## Q2b
+
+**Inspect the reaction times. Include the code in your report.**
+
+```{r, echo=TRUE}
+
+#inspecting reaction time based on block
+summary(avg_latency_block$latency)
+table(avg_latency_block$latency, avg_latency_block$block)
+
+#inspecting reaction time based on response_space 
+summary(no_space.dat$response_time_space)
+summary(space.dat$response_time_space)
+
+hist(space.dat$response_time_space, xlab = 'reaction time (ms)', main = 'Density plot when space bar pressed')
+hist(no_space.dat$response_time_space, xlab = 'reaction time (ms)', main = 'Density plot without space bar pressed')
+
+#inspecting reaction time based on condition
+hist(reward.dat$response_time_space, xlab = 'reaction time (ms)', main = 'Density plot for reward condition')
+hist(no_reward.dat$response_time_space, xlab = 'reaction time (ms)', main = 'Density plot for non-reward condition')
+
+#check distribution of reaction times with respect to normal distribution
+check_normaldist(dat.cor$response_time_space, xlab = 'reaction time (ms)')
+```
+
+**Are there obvious outliers (i.e., values that are clearly problematic)? Explain why you think these points are outliers. If there are any clear outliers, remove these from the data. Include the code in your report.**
+
+The maximum reaction time can not cross beyond 5000ms because even if the subjects did not press the space bar, the maximum time until the input prompt occurred is 5000ms. Therefore, any reaction time beyond 5000ms is a wrong value and can be removed.
+
+```{r, echo=TRUE}
+exclude <- c(5001:6000)
+
+library(dplyr)
+dat.cor <- dat.cor %>%
+  filter(!(dat.cor$response_time_space %in% exclude))
+
+summary(dat.cor$response_time_space)
+```
+
+**Name a characteristic of this set of reaction times that make it difficult to transform the data so that it approximates a normal distribution. (Hint: Plot a histogram if you cannot see it in the QQ plot.)**
+
+The response times vary with respect to the conditions. The distribution of the reaction times has different means in different condition blocks. Therefore, it is difficult to fit a normal distribution to the data which has two means.
+
+```{r, echo=TRUE}
+dat.cor$logRT <- log(dat.cor$response_time_space)
+qqnorm(dat.cor$logRT)
+qqline(dat.cor$logRT)
+
+hist(dat.cor$logRT)
+```
+
+## Q3a
+
+**Replace the dots ('...') by the model formula and run the code. Include the code for the statistical model and the output of the summary in your report**
+For this question you were asked to fit the model with all the interaction terms. However, you only included main effects for the three predictors. 
+
+```{r, echo=TRUE}
+m1 <- lm(response_time_space ~ block*condition*response_space, data=dat.cor)
+summary(m1)
+#dat.corr <- as.factor(dat.cor$block)
+```
+
+**Answer the following questions: - What is represented by the intercept? - What does the estimate block represent? What can you conclude from it’s value in the summary? - What does the estimate response_spacespace represent? What can you conclude from it’s value in the summary? - What does the estimate block:conditionreward represent? What can you conclude from it’s value in the summary? (Hint: for this question you can ignore the other interactions, and just focus on this estimate.)**
+
+Your interpretations for the intercept, slope of block, and the response_space_space terms are all excellent. For the block:conditionreward estimate, you look at the value of the condition_reward term.
+
+The intercept here is the y-intercept. The y-intercept can be interpreted as, 'for a non-reward observation, with no space bar being pressed, the estimated average reaction time is 4783.365 for block 1.' 
+
+The estimate 'block' has a value of approximately 18 which represents the average change in slope when moving to the next block. Thus there is an average decrease of 8ms in reaction time when moving one unit in block under non-reward and no space conditions.
+
+The estimate response_spacespace has a value of approximately -1067 which represents the average drop in the reaction times of observations where the space bar is pressed (and the condition is non-reward) with respect to the progression of 1 unit along the x axis (blocks).
+
+The estimate block:conditionreward has a value of approximately -12.358 which represents a drop in reaction time for reward condition block in contrast to non-reward condition. 
+
+## Q3b
+
+**Use a QQ-plot to visualize the distribution of the residuals of the model. Hint: you can extract the residuals from the model using resid(m1)**
+
+```{r, echo=TRUE}
+residuals<-resid(m1)
+qqnorm(residuals)
+qqline(residuals)
+```
+
+**Compare the QQ-plot of the residuals with a QQ-plot of the input data (i.e., the dependent variable, the un-transformed reaction times; see Question 2a). The distribution of the residuals looks much closer to the normal distribution than the original data. Why do the residuals show a different pattern than the data?** 
+
+The residuals can follow a normal distribution even if the data is not normally distributed. The residuals may show a different pattern because they are not influenced by the data showing non-normal distribution. In the qqplot of the residuals, the distribution on the right tail end (with larger values) is less skewed in comparison to the qqplot of the data (q:2a). This is due to the outliers (observations with reaction times greater than 5000ms) that were removed. However, unlike the distribution of the data, which had two intervals (around 2000ms and 4000ms) that heavily varied from the normal distribution, the residuals seem to be relatively normally distributed in the center. This can be due to the fact that the data distribution varies significantly between different conditions (reward and non-reward) but the residuals of these observations followed a normal distribution.
+
+## 4a
+
+**What are the fitted effects of a statistical model? (they can be extracted using fitted, but also with predict)**
+
+Fitted effects are the fitted values or predicted values that you get when you substitute the levels/categories/co-efficient associated with the predictor variables into the model.
+```{r, echo=TRUE}
+# create a new data file:
+newd <- expand.grid(block = 1:14,
+                    condition = c("reward", "no_reward"),
+                    response_space=c("space", "None"), 
+                    stringsAsFactors = FALSE)
+
+# generate predictions (fitted values) for each condition:
+fv <- predict(m1, newd, se.fit=TRUE)
+newd$fit <- fv$fit
+newd$se  <- fv$se.fit
+
+head(newd)
+
+#fitted values
+val<-fitted(m1)
+summary(val)
+```
+
+**Plot the model estimates of newd. Include the code and the plot in your report.**
+
+```{r, echo=TRUE}
+library(plotfunctions)
+
+# increase labels and left margin:
+par(cex=1.1, mar=c(5.1,4.1,4.1,4.1))
+# setup empty plot with simplified axes:
+emptyPlot(c(0,15), c(3000,5000), # x-range, y-range plot
+          main="reaction time by block", # title
+          xlab="block", ylab="reaction time", # labels axes
+           las=1) # simplify y-axis
+
+# add averages:
+points(newd$block, newd$fit, lwd=1.5, 
+       pch=ifelse(newd$condition=="no_reward", 15,4), 
+       bg='white', 
+       col=ifelse(newd$condition=="no_reward", 1,2 ),
+       )
+points(newd$block, newd$fit, lwd=1.5,
+       col= ifelse(newd$response_space=="space", 7,8 ))
+
+# add legend:
+leg1 <- tapply(newd$fit, list(newd$condition), mean)
+text(c(16,16), leg1,  labels=gsub("_", " ", names(leg1)), 
+     adj=0, col=ifelse(names(leg1)=="no_reward", 1,2), cex=.85, xpd=TRUE)
+
+leg2 <- tapply(newd$fit, list(newd$response_space), mean)
+text(c(16,16), leg2,  labels=gsub("_", " ", names(leg2)), 
+     adj=0, col=ifelse(names(leg2)=="space", 7,8), cex=.85, xpd=TRUE)
+```
+
+## 4b
+
+**Based on the plots, explain which predictor has the largest influence on the participants’ reaction times.** 
+
+
+ The reaction times vary most significantly based on the response_space condition. For observations that pressed the space bar, the reaction times are around 3500ms. Whereas, for no space bar pressed, the reaction times are higher at around 4500ms. This is clearly evident in the plot. It can also be noted that in general, the reward block has lower reaction times than the non-reward block for both space bar pressed and no space bar. 
+
+**Describe in words the interaction between block, condition, and response_space. Hint: look at the plot and at the summary.**
+The block variable is not dependent on condition or response_space. As the blocks progress, there is a drop in reaction times. However, there is an interaction between condition and response_space. The reward block of the space pressed and the non-reward block of the no space pressed seem to have very slight decline in their reaction times over the blocks. However, the non-reward blocks of the space bar pressed and the reward blocks of the no-space bar pressed seem to decline more significantly over the blocks. This depicts a strong interaction between the space bar pressed and the condition.

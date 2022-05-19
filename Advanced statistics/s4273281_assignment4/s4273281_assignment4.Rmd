@@ -1,0 +1,707 @@
+---
+title: "Assignment 4"
+author: "Zulikah Latief"
+date: "12/17/2021"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r}
+#Set up working directory
+rm(list=ls())
+setwd('~/MSC AI/MSC AI YEAR 2/Adv stats/R programming/s4273281_assignment4')
+```
+
+```{r,echo=FALSE}
+#load libraries
+library(plyr)
+library(plotfunctions)
+library(lme4)
+library(dplyr)
+```
+
+```{r, echo=TRUE}
+#load data
+load("data_TVJT.rda")
+head(dat, 10)
+
+#there is one NA value 
+sum(is.na(dat$Accuracy))
+
+#removing the 1 NA value
+dat <- na.omit(dat)
+
+# first exclude the control items:
+dat <- droplevels(dat[dat$SentenceType!="control",])
+```
+
+
+## Question 1: Descriptive statistics [5pt]
+
+**Question 1a: Descriptive statistics. First, you are asked to check the structure of the data. Include the code in your report and a description in words of the structure of the data.**
+
+The experiment has 2 blocks, with 39*16 trails per block. There are a total of 39 participants taking part in a within-subject study that has two conditions, namely slow speech and normal speech. Each subject takes part in 16 trails per condition, which makes a total of 32 trails/ subject. 
+
+There are a total of 8 items. Each item can vary in the sentence type and trial type, with equal amount of observations for both the sentencetypes (him and himself) and both trailtypes (congruent and incongruent). Thus, the items have 4 variants. Overall the data is balanced with equal number of observations per condition, per sentencetype and per trail type.
+
+```{r, echo=TRUE}
+#number of subjects 
+n_distinct(dat$Subject)
+
+#subjects by condition
+head(table(dat$Condition, dat$Subject))
+
+#Item by condition, trail type and sentence type 
+head(table(dat$Condition, dat$TrialType, dat$Item))
+head(table(dat$Condition, dat$SentenceType, dat$Item))
+```
+
+```{r, echo=TRUE}
+#Split binary accuracy into two columns, namely A0 and A1
+ndat <- ddply(dat, c("Subject", "Group", "Block", "Trial", "Condition", "SentenceType", "TrialType", "Item", "Accuracy"), 
+             summarise,
+            A1 = sum(Accuracy=='1'),
+            A0 = sum(Accuracy=='0'),
+            acc.score = cbind(A1, A0))
+head(ndat)
+```
+
+**Question1b: Calculate the 8 averages per participant (i.e., proportion of answers that were correct), for the combination of the predictors SentenceType, TrialType, and Condition**
+
+```{r, echo=TRUE}
+agg1 <- ddply(ndat, c("Subject", "Condition", "SentenceType",  "TrialType"),
+              summarize,
+              meanAcc = mean(A1))
+
+head(agg1)
+```
+
+**Question1b: Calculate in a new data frame the overall means for the 8 conditions based on the participant means calculated in the previous bullet point.**
+
+```{r, echo=TRUE}
+agg2 <- ddply(agg1, c("Condition", "SentenceType",  "TrialType"), 
+              summarize,
+              meanAcc = mean(meanAcc))
+head(agg2)
+```
+
+**Question1b: Also calculate the SE (standard error of the mean) for the 8 conditions based on the participant means calculated in the previous bullet point. **
+
+```{r, echo=TRUE}
+agg2 <- ddply(agg1, c("Condition", "SentenceType",  "TrialType"), 
+              summarize,
+              SE = se(meanAcc),
+              meanAcc = mean(meanAcc))
+              
+head(agg2)
+```
+**Now visualize the 8 condition averages (i.e., the combination of the predictors SentenceType, TrialType, and Condition) that you have calculated in question 1b. **
+
+```{r, echo=TRUE}
+library(ggplot2)
+
+ggplot(agg2, aes(TrialType, meanAcc, fill = SentenceType)) +
+  geom_col(position = position_dodge(width = 1), color = "gray50") +
+  geom_errorbar(aes(ymin = meanAcc - SE, 
+                    ymax = meanAcc + SE), width = 0.25,
+                position = position_dodge(width = 1)) +
+  scale_fill_manual(values = c("darkseagreen3", "coral2")) +
+  facet_grid(.~Condition, switch = "x") +
+  theme_bw() +
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        panel.border = element_blank(),
+        panel.spacing = unit(0, "points"),
+        axis.line = element_line())
+
+
+```
+## Question 2: Random intercepts model
+
+**Set up a linear mixed-effects regression model that models whether participants were more accurate (Accuracy, the dependent variable) depending on the SentenceType (SentenceType), TrialType (TrialType), and Speech rate condition (Condition). Include all fixed-effect interactions as well as random intercepts for participants and items.**
+
+```{r, echo=TRUE}
+library(lme4)
+m1 <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1|Subject) + (1|Item), data = ndat, family = binomial)
+summary(m1)
+
+#Extracting the random effects for subject
+re <- ranef(m1)[['Subject']]
+head(re)
+
+#plot for avg accuracy by subjects
+acc <- tapply(ndat$Accuracy, list(ndat$Subject), mean)
+emptyPlot(range(re[,1]), ylim = c(0,1),
+          xlab="random intercept", ylab="mean accuracy",
+          xmark=TRUE, ymark=TRUE, las=1)
+points(re[,1], acc, pch=16, col=alpha("steelblue"))
+
+#qqnorm showing distribution of different subjects
+qqnorm(re[,1])
+qqline(re[,1])
+
+#Extracting the random effects for items
+reitem <- ranef(m1)[['Item']]
+head(reitem)
+
+#plot for avg accuracy by items
+acc_item <- tapply(ndat$Accuracy, list(ndat$Item), mean)
+emptyPlot(range(reitem[,1]), ylim = c(0,1),
+          xlab="random intercept", ylab="mean accuracy",
+          xmark=TRUE, ymark=TRUE, las=1)
+points(reitem[,1], acc_item, pch=16, col=alpha("steelblue"))
+
+#qqnorm showing distribution of different items
+qqnorm(reitem[,1])
+qqline(reitem[,1])
+```
+The random intercepts for subjects show a correlation with the average accuracy as shown in the plot. This is not the case for items though. The qqnorm is also plotted, which give an idea about outliers and depict any pattern observed for the random effects. The qqnorm plot for subjects shows a trend in the response of the subjects. There is one cluster of subjects at the left tail, that have a much lower average accuracy value. The second cluster is around the center which shows multiple smaller clusters of subjects having an average accuracy centered around the mean of the normal distribution. Finally towards the right tail end you see a few subjects that have a higher accuracy value. Although, the random effects are not expected to follow a normal distribution, this plot shows a trend across the subjects. The qqnorm for the items are a bit more random, but they also seem to show a similar trend as subjects. These trends may be due to the different conditions and experimental manipulations, i.e., Condition, SentenceType, TrialType.
+
+**Question 2b: What does the intercept represent? And what can you conclude from the value of the intercept?**
+
+Intercept represents the approximate average accuracy for SentenceTypehim and TrialTypecongruent under the normal_speech rate condition in the log odds scale.  The positive value of 1.3044 represents that the average accuracy in trails with SentenceType = him, TrialType = congruent and condition = normal_speech is high in contrast with trails where SentenceType = himself, TrialType = incongruent and condition = slow_speech.
+
+**Explain in your own words: How do the random intercepts for Subject and Item change the model estimates?**
+
+While the fixed effects account for the overall variance in data due to the different experimental conditions and variables, they don't account for the variance due to individual subjects or items. The random intercept for subject and item denote the effect of individual subjects and individual items on the accuracy. For instance, the  fixed effect intercept represents the avg accuracy across various conditions for all subjects and items. However, the intercept does not capture how the accuracy varies for each subject or each item. This additional random effect of the subjects and items is captured by the random intercepts. Thus in order to explain the variance due to each subject and each item, the model intercepts would have to be adjusted (added/subtracted) according to the values of the random intercepts for the respective subjects and items.
+
+**Looking at the random effects summary, which of the two random intercepts do you think is most important? (Explain why.)**
+
+The random effect associated with subject has a higher associated variance value. This means that there is high variance in the data due to the different subjects. A lower value indicates that the random effect attributes to a low amount of variance in the data, which means it cannot explain a lot of the variance in the data.
+
+## Question 3: Random slopes
+
+Before investigating the fixed-effects, we will check whether we can improve the model by including random slopes.
+
+**Make a list (in words or code, without running the model) of the predictors that could potentially function as random slopes for Subjects and Items. Explain what type of predictors / which predictors are less/not suited to include as random slopes.**
+
+(1 + TrailType| Subject) 
+(0 + TrailType | Subject)
+
+(1 + SentenceType | Subject)
+(0 + SentenceType | Subject)
+
+(1 + Condition | Subject) 
+(0 + Condition | Subject) 
+
+(1 + TrailType| Item) 
+(0 + TrailType | Item)
+
+(1 + SentenceType | Item)
+(0 + SentenceType | Item)
+
+(1 + Condition | Item) 
+(0 + Condition | Item) 
+
+Note: It also makes sense to use (0 + Fixedeffect | Random effect) for the above predictors. If the correlation is high while using (1 + Fixedeffect | Random effect), it is reasonable to check the correlation using (0 + Fixedeffect | Random effect) because it can help in interpreting whether there is indeed a high correlation between the effects.
+
+The following do not seem relevant or less relevant for the experiment:
+
+(1 + Trail | Subject) This would tell us whether a subject's accuracy differs over the different trails. The only time it could be relevant is if we want to check whether the subject's accuracy decreases towards the end of the experiment due to tiredness. However, for the hypothesis of this experiment it does not seem as relevant.
+
+(1 + Block | Subject) This would tell us whether a subject's accuracy differs across the two blocks. It is good to note that block 1 has a few more number of normal_speech trails (320) than slow_speech trails (304). Whereas, it is the other way around for block 2. 
+
+```{r, echo=TRUE}
+table(ndat$Block, ndat$Condition)
+```
+
+And so if the accuracy differs across the blocks it might be due to the different number of trials/condition/block (however, it may also be due to the different items). It might be relevant to model this random slope because why else would the blocks be designed in such a way. And since block is an experimental manipulation it might be useful to have a random slope for it. It is also worthy to note that at the same time we are already checking (1 + Condition | Subject) to model the effect of different conditions on each subject. And more over, 
+
+(1 + Trail | Item) - this would tell us how the accuracy for an item differs over the different trials. Firstly, it is good to note that an item does not occur in all trials. Moreover, the accuracy of an item in different trials is not significant, rather, the accuracy of items over different trialtype might be more significant/ relevant for the hypothesis of this study. 
+
+(1 + Block | Item) - this would tell us how the accuracy for an item differs across the two blocks. This is not relevant in terms of the hypothesis. However, since all items occur equal number of times in both blocks and since the blocks differ in the number of trails/ condition, this random slope might help in understanding whether same items in different conditions differ in their accuracy.
+
+```{r, echo=TRUE}
+table(ndat$Item, ndat$Condition, ndat$Block)
+```
+
+I am aware that (1 + Condition | Item) must already account for this effect but I think this ((1 + Block | Item)) random slope might also contribute in understanding the overall differences between the conditions (along with (1 + Block | Subject)).
+
+(1 + Subject | Item) - this would tell us how the accuracy of each item differs for different subjects. This is not relevant because we would not want to generalize over the different items (I'm not referring to different types of items) for a new subject.
+
+**Random slopes could be added in (at least) two different ways: 1+Slope or 0+Slope. Explain the difference in interpretation between these two different ways for categorical predictors. (Note that the interpretation of these two ways is different for continuous predictors.)**
+
+While using (0+Slope), the intercept of the random effect does not represent the value at the referential level. Instead, separate intercepts for each level of the categorical variable is produced.
+
+Whereas, for (1+Slope), the returned intercept value represents the random intercept at the referential level and the random slope as a difference between the referential level and the other level of the categorical variable. The random intercept + random slope for the other levels of the categorical variable are represented as intercept adjustments with respect to the referential level. 
+
+```{r, echo=TRUE}
+
+library(lme4)
+zx <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1|Item) +
+             (1+Condition|Subject), data = ndat, family = binomial)
+summary(zx)
+```
+
+```{r, echo=TRUE}
+
+library(lme4)
+zy <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1|Item) +
+             (0+Condition|Subject), data = ndat, family = binomial)
+summary(zy)
+```
+
+**Use model comparisons to determine which of the predictors from your list should be included as random slopes for Subject and/or Item. For this assignment, please do not add more than 1 slope per grouping predictor per model. Include the code for the model comparison procedure and your conclusions in your report, and clearly specify which random effects structure you think is the best (given the constraints of this assignment).**
+
+```{r, echo=TRUE}
+library(lme4)
+m1 <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1|Subject) + (1|Item), data = ndat, family = binomial)
+summary(m1)
+```
+
+First, I shall check for (1 + Condition | Subject) which tells us how the accuracy of each subject differs for the two conditions, namely, normal_speech and slow_speech.
+
+```{r, echo=TRUE}
+#checking for (1 + Condition | Subject)
+m2a <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1 + Condition | Subject)
+             + (1|Item), data = ndat, family = binomial)
+summary(m2a)
+```
+
+The random intercept of subject, represents the estimate for accuracy in the normal speech condition/ subject. This has a high variance value of 4.045e-01 and a standard deviation of ~0.635 which means that the accuracy varies largely for different subjects in the normal_speech condition. The random slope, Conditionslow_speech represents the difference in accuracy between the condition:normal_speech and Conditionslow_speech for different subjects.
+Notice that, it has a significantly lower variance of 7.806e-05 and std deviation of 0.008835, which suggests that the subjects do not significantly differ in their accuracy for Conditionslow_speech in contrast to the referential condition. The correlation value is 1 which is very high and suggests that the two conditions capture/explain the same variance. Furthermore, the intercept of Item represents the difference in accuracy across different items. It has a variance of 2.053e-01 and a std deviation of 0.453117 which suggests that the accuracy does vary for different items. 
+
+Overall, so far, it can be said that different subjects show a difference in their accuracy for the normal_speech condition. However, the subjects accuracy do not differ across the two conditions. They respond similarly to the two conditions. Furthermore, different items seem to differ in their accuracy. 
+
+Just to verify the interpretation of the correlation between the two conditions, I will try (0 + Condition | Subject).
+
+```{r, echo=TRUE}
+#checking for (0 + Condition | Subject)
+m2b <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (0 + Condition | Subject)
+             + (1|Item), data = ndat, family = binomial)
+summary(m2b)
+```
+
+On running this model, I immediately get the "boundary (singular) fit: see ?isSingular" warning which indeed confirms that the correlation between the conditions is high. The 2 variance values, represent the intercepts for each condition respectively (no intercept adjustment here). These values Conditionnormal_speech 0.4051 and Conditionslow_speech 0.4145  are almost the same and also confirms that the different conditions do not vary the accuracy for different subjects.
+
+Finally, I will compare m1, m2a to see which model better explains the data.
+
+```{r, echo=TRUE}
+anova(m1, m2a, refit= FALSE)
+```
+
+The ANVOA evaluates whether or not including condition as a random slope for subject leads to a significant improvement over using just the random intercept of subject. The chi-square test results show that the effect was insignificant, (χ2(2)=9e-04, p=0.9995). Despite using two extra degrees of freedom model m2a explains the same amount of variance as model m1. Thus m1 is a better model.
+
+Next, I shall check for (1 + SentenceType | Subject) which tells us how the accuracy of each subject differs for the two SentenceTypes, namely, 'him' and 'himself'.
+ 
+```{r, echo=TRUE}
+#checking for (1 + SentenceType | Subject)
+m3 <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1 + SentenceType | Subject)
+             + (1|Item), data = ndat, family = binomial)
+summary(m3)
+```
+
+The random intercept of subject represents the estimate for accuracy in the SentenceTypehim condition/ subject. This has a high variance value of 0.5465 and a standard deviation of 0.7392 which means that the accuracy varies largely for different subjects in the SentenceTypehim condition. The random slope, SentenceTypehimself represents the estimated difference in accuracy between SentenceTypehim and SentenceTypehimself  for different subjects. It has a variance of 0.2335 and a std deviation of 0.4832 which suggests that the subjects differ less in their accuracy for SentenceTypehimself in contrast to SentenceTypehim. The drop in variance value for SentenceTypehimself indicates that the difference in accuracy for different subjects under SentenceTypehimself is lesser when compared to SentenceTypehim. The correlation value is -0.75 which suggests negative, but high coorelation. The interpretation of this correlation will be crosschecked below. Furthermore, the intercept of Item represents the difference in accuracy across different items. It has a variance of 0.2076  and a std deviation of 0.4556 which suggests that the accuracy does vary for different items. 
+
+Overall, so far, it can be said that the subjects do differ across the two SentenceType. However, the SentenceTypehim explains more variance because the subjects differ highly in their accuracy for this SentenceType. Furthermore, different items seem to differ in their accuracy. 
+
+Just to verify the interpretation of the correlation between the two conditions, I will try (0 + SentenceType | Subject).
+
+```{r, echo=TRUE}
+#checking for (1 + SentenceType | Subject)
+m3a <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (0 + SentenceType | Subject)
+             + (1|Item), data = ndat, family = binomial)
+summary(m3a)
+```
+
+The correlation is high with a value of 0.75 and positive as shown in the summary above. The high value suggests that the two conditions capture/explain the same variance to some extent. Note however, this is not as high as the correlation between the two speech rates.
+
+-----
+
+Next, I shall check for (1 + TrialType| Subject) which tells us how the accuracy of each subject differs for the two TrialTypes, namely, 'congruent' and 'incongruent'.
+ 
+```{r, echo=TRUE}
+#checking for (1 + TrailType| Subject) 
+m4 <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1 + TrialType| Subject) 
+             + (1|Item), data = ndat, family = binomial)
+summary(m4)
+```
+
+The random intercept of subject represents the estimate for accuracy in the TrialTypecongruent/ subject. This has a very high variance value of 0.8481 and a standard deviation of 0.9209 which means that the accuracy varies largely for different subjects in the TrialTypecongruent. The random slope, TrialTypeincongruent represents the estimated difference in accuracy between TrialTypecongruent and TrialTypeincongruent for different subjects. It has a very high variance of 1.1463 and a std deviation of 1.0706 which suggests that the subjects differ more in their accuracy for TrialTypeincongruent in contrast to TrialTypecongruent. The increase in variance value for TrialTypeincongruent indicates that the difference in accuracy for different subjects under TrialTypeincongruent is higher when compared to TrialTypecongruent. The correlation value is -0.71 which suggests negative, but high coorelation. The interpretation of this correlation will be crosschecked below. Furthermore, the intercept of Item represents the difference in accuracy across different items. It has a variance of 0.2241 and a std deviation of 0.4734 which suggests that the accuracy varies for different items.
+
+It should also be noted that the intercept value of the fixed effects also changes slightly and the deviance explained by the model is slightly reduced. Overall, so far it is clear that modelling TrailType as a random slope for subjects suggests that there is a significant difference in accuracy for different trial types for different subjects. This may suggest that TrialType is a strong predictor for accuracy and this effect can be generalized over new subjects. 
+
+
+Just to verify the interpretation of the correlation between the two trial types, I will try (0 + TrialType | Subject).
+
+```{r, echo=TRUE}
+#checking for (0 + TrialType | Subject)
+m4a <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (0 + TrialType | Subject)
+             + (1|Item), data = ndat, family = binomial)
+summary(m4a)
+```
+
+From the results, the correlation is not as strong, i.e., 0.19. This suggests that the two trial types account for different variances in the data, i.e., subjects indeed differ in their response across the two trial types.
+
+Now, I shall compare models to check which random effects account for variance in data.
+
+```{r, echo=TRUE}
+anova(m1, m2a, m3, m4, refit=FALSE)
+```
+
+The m4 has lesser deviance but spends two additional degrees of freedom when compared to m1. m4 is not significant according to the Chisq test as it does not give a p-value. This might be due to the cost of degree of freedoms for the model.
+
+-----
+
+Now, I shall check for (1 + Condition| Item) which tells us how the accuracy of different items differs for the two conditions, namely, 'normal_speech' and 'slow_speech'.
+
+```{r, echo=TRUE}
+#checking for (1 + Condition| Item)
+n1 <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1 + Condition| Item)
+             + (1|Subject), data = ndat, family = binomial)
+summary(n1)
+```
+ 
+The random intercept of subject represents the estimate for accuracy for different subjects. It has a variance of 0.410729 and a std deviation of 0.64088 which suggests that the average accuracy varies for different subjects. The random intercept of item represents the estimate for accuracy in the normal_speech condition/ item. This has a variance value of 0.259780 and a standard deviation of 0.50969 which means that the accuracy varies for different items in the normal_speech condition. The random slope, Conditionslow_speech represents the estimated difference in accuracy between Conditionnormal_speech and Conditionslow_speech for different items. It has a very low variance of 0.007454 and a std deviation of 0.08634. The drop in variance value for  Conditionslow_speech indicates that the difference in accuracy for different items under Conditionslow_speech is uniform when compared to Conditionnormal_speed. The correlation value is -1 which suggests negative, but high coorelation. The interpretation of this correlation will be crosschecked below. 
+
+Just to verify the interpretation of the correlation between the two conditions, I will try (0 + Condition| Item).
+
+```{r, echo=TRUE}
+#checking for (0 + Condition| Item)
+n1a <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (0 + Condition| Item)
+             + (1|Subject), data = ndat, family = binomial)
+summary(n1a)
+```
+
+The results show a strong correlation of 1 for the different conditions by items. For this reason, it can be concluded that this random slope for the two conditions is not significant as is it captures the same variance for both the conditions. The different conditions do not have a different effect on accuracy for items.
+
+----
+
+Now, I shall check for (1 + SentenceType| Item) which tells us how the average accuracy of items differs for the two SentenceTypes, namely, 'him' and 'himself'
+
+```{r, echo=TRUE}
+#checking for (1 + SentenceType| Item)
+n2 <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1 + SentenceType| Item)
+             + (1|Subject), data = ndat, family = binomial)
+summary(n2)
+```
+
+The random intercept of subject represents the estimate of accuracy for different subjects. It has a variance of 0.4542 and a std deviation of 0.6739 which suggests that the average accuracy varies for different subjects. The random intercept of item represents the estimate for accuracy in the SentenceTypehim/ item. This has a high variance value of 0.7611 and a standard deviation of 0.8724 which means that the accuracy varies significantly for different items in the SentenceTypehim. The random slope, SentenceTypehimself represents the estimated difference in accuracy between SentenceTypehim and SentenceTypehim for different items. It has a very high variance of 1.0405 and a std deviation of 1.0200. The increase in variance value for  SentenceTypehimself indicates that the difference in accuracy for different items under SentenceTypehimself is higher when compared to SentenceTypehim. The correlation value is -0.97 which suggests negative, but high corelation. The interpretation of this correlation will be crosschecked below.
+
+Just to verify the interpretation of the correlation between the two sentence types, I will try (0 + SentenceType| Item).
+
+```{r, echo=TRUE}
+#checking for (0 + SentenceType| Item)
+n2a <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (0 + SentenceType| Item)
+             + (1|Subject), data = ndat, family = binomial)
+summary(n2a)
+```
+
+From the results, the correlation is not as strong, i.e., -0.41. This suggests that the two sentence types account for different variances in the data.
+
+----
+Now, I shall check for (1 + TrialType| Item)  which tells us how the average accuracy of items differs for the two TrialTypes, namely, 'congruent' and 'incongruent'
+
+```{r, echo=TRUE}
+#checking for (1 + TrialType| Item)
+n3 <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1 + TrialType| Item)
+             + (1|Subject), data = ndat, family = binomial)
+summary(n3)
+```
+
+The random intercept of subject represents the estimate of accuracy for different subjects. It has a variance of 0.4034  and a std deviation of   0.6352 which suggests that the average accuracy varies for different subjects. The random intercept of item represents the estimate for accuracy in the TrialTypecongruent/ item. This has a variance value of 0.1147  and a standard deviation of  0.3386 which means that the accuracy varies slightly for different items in the TrialTypecongruent. The random slope, TrialTypeincongruent represents the estimated difference in accuracy between TrialTypecongruent and TrialTypeincongruent for different items. It has a high variance of 0.6483 and a std deviation of 0.8052. The increase in variance value for TrialTypeincongruent indicates that the difference in accuracy for different items under TrialTypeincongruent is much higher when compared to TrialTypecongruent. The correlation value is -1.00 which suggests negative, but very high corelation. The interpretation of this correlation will be crosschecked below.
+
+Just to verify the interpretation of the correlation between the two sentence types, I will try (0 + TrialType| Item).
+
+```{r, echo=TRUE}
+#checking for (0 + TrialType| Item)
+n3a <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (0 + TrialType| Item)
+             + (1|Subject), data = ndat, family = binomial)
+summary(n3a)
+```
+The correlation is high at -1. This suggests that the two trial types account for the same variances in the data. Even though the random slope suggested otherwise. It can be seen that the deviance has increased to 958, which might explain the high correlation.
+
+Finally, from the above inspection, some random effects seem to explain variance in the data. Models with (1 + SentenceType | Item) and (1 + TrialType | Subject) seemed to explain more variance and so combining them is an option. 
+
+```{r, echo=TRUE}
+z <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1 + SentenceType | Item)
+            + (1 + TrialType | Subject)
+             , data = ndat, family = binomial)
+summary(z)
+```
+
+
+Following is a model comparison between all the random slope models:
+
+```{r, echo=TRUE}
+anova(m1, m2a, m3, m4, n1, n2, n3, z, refit=FALSE)
+
+```
+Model z with two random slopes is significant. The chi-square test results show that model z is significant, (χ2(2)=32.1555, p=1.041e-07). It uses 2 additional degrees of freedom in comparison with random slope models and 4 additional degrees of freedom in comparision with the random intercept model (m1). Furthermore, model z uses random effects to explain variance in data. Modelling SentenceType as a random slope for item and TrailType as a random slope for subject explains the variance in the data that cannot be accounted by the fixed effects. This suggests that for different sentence types, the accuracy varies for items. Moreover, different trial types, have different accuracy for subjects.
+
+**Question 3d) Use the function ranef to retrieve the random effects estimates. Visualize the random effects estimates. (You can decide what visualization is most appropriate - this depends on the random effects structure of your best-fitting model.)**
+
+```{r, echo=TRUE}
+#extract random effects for subject
+re_z<- ranef(z)[['Subject']]
+re_z
+
+#extract random effects for item
+re_z_i<- ranef(z)[['Item']]
+re_z_i
+
+#plot for (1 + TrialType| Subject)
+emptyPlot(range(re_z[1]), range(re_z[2]), 
+     xlab='Subject Intercepts', ylab='Slope', 
+     main="(1 + TrialType| Subject)", 
+     xmark=TRUE, ymark=TRUE, las=1)
+points(re_z[[1]], re_z[[2]], pch=16, col="steelblue")
+
+#correlation between intercept and slope
+cor.test(re_z[[1]], re_z[[2]])
+
+#plot for (1 + SentenceType| Item)
+emptyPlot(range(re_z_i[1]), range(re_z_i[2]), 
+     xlab='Item Intercepts', ylab='Slope', 
+     main="(1 + SentenceType| Item)", 
+     xmark=TRUE, ymark=TRUE, las=1)
+points(re_z_i[[1]], re_z_i[[2]], pch=16, col="steelblue")
+
+#correlation between intercept and slope
+cor.test(re_z_i[[1]], re_z_i[[2]])
+```
+
+## Question 4: Determining fixed-effects structure
+
+**Start from this model (so including random slopes if necessary) and perform a backward-fitting model comparison procedure to determine the best-fitting fixed-effects structure. Include the code and your conclusions (i.e., for each comparison state shortly which model you prefer and why). Hint: use anova(model1, model2) for model comparisons and compare only two models at the time.**
+
+```{r, echo=TRUE}
+# model z
+z <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1 + SentenceType | Item)
+            + (1 + TrialType | Subject)
+             , data = ndat, family = binomial)
+summary(z)
+
+#rewritting model z for model comparision
+z.1 <- glmer( Accuracy ~ SentenceType + TrialType + Condition + SentenceType:TrialType +
+              TrialType: Condition + SentenceType:Condition + 
+              SentenceType:TrialType:Condition +
+              (1 + SentenceType | Item) +
+              (1 + TrialType | Subject)
+             , data = ndat, family = binomial)
+summary(z.1)
+
+###Backward fitting
+f1 <- glmer( Accuracy ~ SentenceType + TrialType + Condition + SentenceType:TrialType +
+              TrialType: Condition + SentenceType:Condition + 
+              (1 + SentenceType | Item) +
+              (1 + TrialType | Subject)
+             , data = ndat, family = binomial)
+summary(f1)
+
+anova(f1, z.1)
+```
+
+Model z.1 has a slightly better deviance at the cost of 1 degrees of freedom. For now, z.1 is preferred.
+
+```{r, echo=TRUE}
+#backward fitting
+f2 <- glmer( Accuracy ~ SentenceType + TrialType + Condition + SentenceType:TrialType +
+              TrialType: Condition + 
+              SentenceType:TrialType:Condition +
+              (1 + SentenceType | Item) +
+              (1 + TrialType | Subject)
+             , data = ndat, family = binomial)
+summary(f2)
+
+anova(f2, z.1)
+```
+ In this case there is no significant difference and f2 is preferred since it is simpler.
+ 
+```{r, echo= TRUE}
+#backward fitting
+f3 <- glmer( Accuracy ~ SentenceType + TrialType + Condition + SentenceType:TrialType +
+              SentenceType:TrialType:Condition +
+              (1 + SentenceType | Item) +
+              (1 + TrialType | Subject)
+             , data = ndat, family = binomial)
+summary(f3)
+
+anova(f2, f3)
+```
+
+Here, model f3 is exactly the same as model f2 in terms of deviance and other good-fit tests. Thus the simpler model f3 is preferred.
+
+```{r, echo = TRUE}
+#backward fitting
+f4 <- glmer( Accuracy ~ SentenceType + TrialType + Condition + SentenceType:TrialType +
+              (1 + SentenceType | Item) +
+              (1 + TrialType | Subject)
+             , data = ndat, family = binomial)
+summary(f4)
+
+anova(f4, f3)
+```
+
+In this case, model f3 is better since it has a lower deviance at the cost of 3 degrees of freedom. Thus, model f3 is preferred. But we can go back to model f3 and remove a different interaction. 
+
+```{r, echo = TRUE}
+#backward fitting
+f5 <- glmer( Accuracy ~ SentenceType + TrialType + Condition + 
+              SentenceType:TrialType:Condition +
+              (1 + SentenceType | Item) +
+              (1 + TrialType | Subject)
+             , data = ndat, family = binomial)
+summary(f5)
+
+anova(f5, f3)
+```
+In this case, both the models are the same. The less complex model f5 is preferred because it is simpler whilst havig the same deviance as f3.
+
+```{r, echo = TRUE}
+#backward fitting
+f6 <- glmer( Accuracy ~ SentenceType + TrialType + Condition + 
+              (1 + SentenceType | Item) +
+              (1 + TrialType | Subject)
+             , data = ndat, family = binomial)
+summary(f6)
+
+anova(f5, f6)
+```
+In this case f5 is preferred since it has a lower deviance at the cost of 4 degrees of freedom. The model comparison can be stopped at this point because removing fixed effects while keeping the lower level interactions does not seem reasonable to do. Moreover, since the fixed effects are categorical, removing them would mean that both the levels of the categorical predictor are insignificant, which might not be the case.
+
+## Question 5: Evaluation of the best-fitting model
+
+**Compare the best-fitting model from the preceding question with a generalized linear model with the same fixed-effects structure.**
+
+```{r, echo=TRUE}
+#glm model
+modelFixed <- glm(Accuracy ~ SentenceType + TrialType + Condition + 
+              SentenceType:TrialType:Condition, data = ndat, family= binomial)
+summary(modelFixed)
+
+#final mixed effect model
+f5 <- glmer( Accuracy ~ SentenceType + TrialType + Condition + 
+              SentenceType:TrialType:Condition +
+              (1 + SentenceType | Item) +
+              (1 + TrialType | Subject)
+             , data = ndat, family = binomial)
+summary(f5)
+```
+
+Answer the following questions:
+
+**Describe the difference in residuals. Did the random effects improve the model?**
+
+By comparing the residual plots for the glm model and glme, you can see a clear difference between the residuals. For glm, the residuals follow a strong trend and form multiple lines of clusters. Whereas, for the glme model, the residuals are more even and there are much lesser residuals with values above and below 0. The fitted vs residuals plot for glm show discontinuous points for negative and positive residuals. The same plot for glme model shows a similar trend but the points are continuous rather than scattered. The random effects seem to have gotten rid of structures within the residuals. While there is still a linear trend in the plot, there are no clusters of residuals. 
+
+
+```{r, echo=TRUE}
+# extract residuals for glm:
+res_ <- resid(modelFixed)
+res_
+
+#plot residuals for glm
+plot(res_)
+
+#fitted vs residuals plot for glm
+emptyPlot(xlim = c(0, 1), ylim = c(-3, 3), h0=0,
+          xlab="Fitted", ylab="Resid",
+          xmark=TRUE, ymark=TRUE, las=1)
+points(fitted(modelFixed), resid(modelFixed), pch=16, col=alpha("steelblue"))
+
+
+# extract residuals for glme:
+resd <- resid(f5)
+resd
+
+#plot residuals for glme
+plot(resd)
+
+#fitted vs residuals plot for glme
+emptyPlot(xlim = c(0, 1), ylim = c(-3, 3), h0=0,
+          xlab="Fitted", ylab="Resid",
+          xmark=TRUE, ymark=TRUE, las=1)
+points(fitted(f5), resid(f5), pch=16, col=alpha("steelblue"))
+
+```
+
+Compare the difference in fixed-effects. Did the random effects change the model predictions?
+
+
+**b) Fitted values: Below we retrieve the model’s estimates for each condition on the logit scale and on proportion scale. Run the code and inspect the output.**
+
+```{r, echo=TRUE}
+newd <- expand.grid(SentenceType = levels(dat$SentenceType),
+                    Condition=levels(dat$Condition), 
+                    TrialType=levels(dat$TrialType))
+# Do you understand why we need to add 
+# one subject and one item in th efollowing lines?
+newd$Subject <- levels(dat$Subject)[1]
+newd$Item <- levels(dat$Item)[1]
+
+# fitted effects on logit scale,
+# excluding random effects:
+# (add model name instead of dots)
+newd$fit <- predict(  f5, newd, re.form=NA, type='link')
+# convert back to proportion scale:
+newd$prop <- plogis(newd$fit)
+
+# show estimates:
+newd
+```
+
+
+```{r, echo=TRUE}
+#plot for new predicted values
+ggplot(newd, aes(TrialType, prop, fill = SentenceType)) +
+  geom_col(position = position_dodge(width = 1), color = "gray50") +
+  geom_errorbar(aes(ymin = prop, 
+                    ymax = prop), width = 0.25,
+                position = position_dodge(width = 1)) +
+  scale_fill_manual(values = c("darkseagreen3", "coral2")) +
+  facet_grid(.~Condition, switch = "x") +
+  theme_bw() +
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        panel.border = element_blank(),
+        panel.spacing = unit(0, "points"),
+        axis.line = element_line())
+
+
+```
+The fitted values show that, the accuracy varies the greatest for the levels of the Trial type predictor. Across normal and slow speech conditions, the accuracy for 'himself' sentence type is higher in general. Furthermore, for 'himself' sentence type under congruent trail types the accuracy is higher when compared to incongruent trail types. However, this difference between the two trail types is larger in the slow_speech condition. For the 'him' sentence type under normal speech rate, the accuracy for congruent trail types is much higher than for incongruent trial types. This trend is viable even during the slow speech rate, however, the accuracy for incongruent trail type for the 'him' sentence type is is higher in comparison to normal speech.
+
+Write a short paragraph for a paper in which you report the accuracy analysis. For this question ignore the convergence warnings. Include the results of statistical tests. You can split up the paragraph in the following subsections:
+
+**Describe the random-effects structure and how you determined the random-effects structure**
+
+The random effects structure started by assigning random intercept for predictors that have repeated measurements. The reason this is done is because the model assumes that repeated measurements are independent of each other. However, this is an unreasonable claim because all the observations produced by one subject will be dependent.In order to account for this varaiance between different subjects, random effects are used. 
+
+The current model consists of two random slopes, (1 + SentenceType | Item) and (1 + TrialType | Subject) for two fixed effects. (1 + SentenceType | Item) accounts for the random effect that is caused by the difference in accuracy for different SentenceType over the different items. The (1 + TrialType | Subject) accounts for the variance due to different TrailType for different subjects. For these random effects it can be noticed that the accuracy value highly differs across the respective conditions. These random effect structure was defined by trail and error. I used a random slope for all the main effects because this helps identify whether all subjects/items show a difference in accuracy between two conditions. If this is not the case then the model cannot be generalized to a larger sample. Furthermore, these slopes are necessary to address the hypothesis of the experiment. Next, I compared these models as explained in 3c) and found a model that reduced deviance and showed  significant difference. Also note that for random slopes I performed forward fitting.
+
+**Describe how you determined the fixed-effects structure and the best-fitting model.**
+
+The fixed effects structure can be determined through backward fitting. Once the random effects are determined, all the existing fixed effects may no longer contribute to the variance in the data. Therefore, through backward fitting one term at a time is removed from the model. The models are then compared as explained in 3d. The hypothesis of the experiment is also taken into account while modelling this effect. 
+
+**Describe the model estimates for the effects of Condition, SentenceType, and TrialType (and their interactions, if any) on children's accuracy in the Truth-Value Judgement Task.**
+
+```{r, echo=TRUE}
+f5 <- glmer( Accuracy ~ SentenceType + TrialType + Condition + 
+              SentenceType:TrialType:Condition +
+              (1 + SentenceType | Item) +
+              (1 + TrialType | Subject)
+             , data = ndat, family = binomial)
+summary(f5)
+```
+
+The random intercept of subject represents the estimate of accuracy for TrailTypecongruent for different subjects. It has a high variance of  0.8768 and a std deviation of  0.9364 which suggests that the accuracy varies largely for different subjects in the TrialTypecongruent. The random slope, TrialTypeincongruent represents the estimated difference in accuracy between TrialTypecongruent and TrialTypeincongruent for different subjects. It has a very high variance of 1.3052 and a std deviation of 1.1425. The increase in variance value for TrialTypeincongruent indicates that the difference in accuracy for subjects under TrialTypeincongruent is much higher when compared to TrialTypecongruent. 
+
+The random intercept of item represents the estimate for accuracy in the SentenceTypehim/ item. This has a high variance value of 0.8523  and a standard deviation of 0.9232 which means that the accuracy varies by large for different items in the SentenceTypehim. The random slope, SentenceTypehimself represents the estimated difference in accuracy between SentenceTypehim and SentenceTypehimself for different items. It has a high variance of 1.1398 and a std deviation of 1.0676. The increase in variance value for SentenceTypehimself indicates that the difference in accuracy for different items under SentenceTypehimself is much higher when compared to SentenceTypehim. The correlation value is -0.68 for random intercept of subject and the random slop. Similarly, the correlation for item intercept and the slope adjustment is -0.97.
+
+The model estimate, the intercept represents in log odds, the avg accuracy for conditionnormal_speech, trailtypecongruent and sentencetypehim. SentenceTypehimself has a value of 2.5232 which represnets the average increase in accuracy when moving from him to himself sentence type for conditionnormal_speech, trailtypecongruent. 
+
+A log odds of -2.0202  for TrialTypeincongruent is the drop in accuracy when moving from congruent to incongruent, whilst conditionnormal_speech and SentenceTypehim.
+
+The log odds value of -1.2450 indicates the drop in accuracy when moving from normal speech to slow speech. 
+
+SentenceTypehim:TrialTypecongruent:Conditionnormal_speech  represnets a threeway interaction and has a log odds value of -1.3596. This means that as you go from sentence type himself to him and trail type incongruent to congruent, the accuracy drops from slow_speed to normal_speed by a value of  -1.3596. 
+
+SentenceTypehimself:TrialTypecongruent:Conditionnormal_speech has a log odds value of -1.2692. This means when as you go from him to himself  sentence type, incongruent to congruent trial type, the avg accuracy drops from slow_speed to normal_speed by -1.2692. 
+
+SentenceTypehim:TrialTypeincongruent:Conditionnormal_speech has a log odds value of -1.7895. This means that as you go from himself to him in sentence type, congruent to incongruent trail type, the average accuracy decreases from slow_speech to normal_speech condition.
+
+SentenceTypehim:TrialTypecongruent:Conditionslow_speech  has a log odds of  -0.2463. This means that as you go from himself to him in sentence type, incongruent to congruent in trail type, the average accuracy decreases from normal to slow_speech condition.
+
+

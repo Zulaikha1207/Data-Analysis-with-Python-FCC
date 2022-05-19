@@ -1,0 +1,309 @@
+---
+title: "Assigment 1a"
+author: "Zulikah Latief (s4273281)"
+date: "22/11/2021"
+output: 
+  html_document:
+  toc: true
+---
+### PART I: Data inspection
+
+**Question 1: Read the data into a data frame**
+
+```{r load data, echo=TRUE}
+#load data
+data <- read.table('C:/Users/user/Documents/MSC AI/MSC AI YEAR 2/Adv stats/R programming/s4273281_assignment1a/data.txt', header=TRUE)
+
+#check missing values
+sum(is.na(data))
+```
+
+**Inspect the data: What are the names of the columns? How many rows are in the data?**
+```{r, echo=TRUE}
+head(data)
+```
+There are a total of 34,182 rows and 6 columns, namely, Subject, Age, Condition, Item, Frequency and Rating.
+
+**Inspect the data and try to understand what each column represent. Note: You can ignore the column ‘Frequency’ in this Assignment.**
+
+The subject represents the participants of the experiment and the age represents their respective age. The experiment itself has two conditions, namely, study1 and study2. Furthermore, the study involves items that need to be rated on a scale of 1 to 5.
+
+**Describe the structure of the data set: What is the design (between subjects design, within subjects design)? Also provide a summary of the values in each column (i.e., type of data, range of values, number of different values, etc).**
+
+Structure of data - long table. Study1 was conducted on all the 257 subjects. Whereas Study2 was conducted on only s001 to s105. However, it is important to note that the subjects in study2 were different people. For instance, this can be seen by looking at the age of the subject s001, which differs across the two conditions.
+
+```{r, echo=TRUE}
+head(data[data$Subject=='s001',])
+tail(data[data$Subject=='s001',])
+```
+
+Therefore, different people took part in each condition and this makes the design of the experiment a between-subject design. 
+```{r, echo=TRUE}
+#Summary of the variables
+summary(data)
+```
+
+**If you would need to make a graph summarizing this data, what type of graph would you choose?**
+
+A scatter plot will be used for summarizing the data. This clearly represents the relationship between the age variable and the ratings variable. 
+
+![Scatter plot](C:/Users/user/Documents/MSC AI/MSC AI YEAR 2/Adv stats/R programming/s4273281_assignment1a/plot.jpg)
+
+### PART II: Descriptive Statistics
+
+**Question 4: Summarise the data in the columns ‘Age’, ‘Rating’, and ‘Condition’. Which statistics do you report? (Note that we’re asking here for the descriptive statistics of the variables and their interactions rather than the unique values or range of values, as was asked in Question 2.)
+
+```{r, echo=TRUE}
+#Splitting data by condition
+dat_exp1 <- subset(data, Condition == "Study1", select = c("Subject","Age","Rating", "Condition"))
+dat_exp2 <- subset(data, Condition == "Study2", select = c("Subject","Age","Rating", "Condition"))
+```
+*Summarizing Age variable for different condition*
+
+```{r echo=TRUE}
+#Check mean and median for condition study1
+summary(dat_exp1$Age)
+
+#Check mean and median for condition study2
+summary(dat_exp2$Age)
+
+#Calculate mode
+mode_var <- function(variable) {
+   unique_var <- unique(variable)
+   unique_var[which.max(tabulate(match(variable, unique_var)))]
+}
+
+#Check mode for condition study1
+mode_var(dat_exp1$Age)
+
+#Check mode for condition study2
+mode_var(dat_exp2$Age)
+
+```
+Measures of Central tendency: Even though the range of the age variable is between 12 and 86 for study1, the mean and median is 37.6 and 30 respectively.It can also be noted that the age variable is imbalanced as it does not have equal number of subjects for all the age groups. On the other hand, the age of subjects in study2 is in the range of 19 and 76. The median and mean is at 42 and 43.32 respectively. The mode age for study1 is 24 and for study2 it is 27.
+
+
+```{r, echo=TRUE}
+#Calculate mean absolute deviation for condition study1
+X <- dat_exp1$Age
+X.bar <- mean( X ) 
+AD <- abs( X - X.bar ) 
+AAD <- mean( AD ) 
+print( AAD )
+
+#Calculate mean absolute deviation for condition study2
+X <- dat_exp2$Age
+X.bar <- mean( X ) 
+AD <- abs( X - X.bar ) 
+AAD <- mean( AD ) 
+print( AAD )
+
+#Calculate median absolute deviation for condition study1
+mad(dat_exp1$Age)
+
+#Calculate median absolute deviation for condition study2
+mad(dat_exp2$Age)
+
+#Calculate IQR for condition study1
+range(dat_exp1$Age, na.rm=TRUE)
+IQR(dat_exp1$Age)
+
+#Calculate IQR for condition study2
+range(dat_exp2$Age, na.rm=TRUE)
+IQR(dat_exp2$Age)
+
+#Calculate standard deviation for condition study1
+sd(dat_exp1$Age)
+
+#Calculate standard deviation for condition study2
+sd(dat_exp2$Age)
+```
+Measure of variability: The absolute deviation of the age variable from the mean and median is calculated for both the conditions. For study 1, mean absolute deviation is 15.19089 and Median absolute deviation is 14.826. The IQR of the age variable is 27 and the standard deviation is 17.40113. For study2, mean absolute deviation is 12.75896 and Median absolute deviation is 20.7564 The IQR of the age variable is 29 and the standard deviation is 14.52153.
+
+```{r, echo=TRUE}
+
+#Fit normal distribution for study1
+library(fitdistrplus)
+fit <- fitdistr(dat_exp1$Age, "normal")
+class(fit)
+para <- fit$estimate
+hist(dat_exp1$Age, prob = TRUE)
+curve(dnorm(x, para[1], para[2]), col = 2, add = TRUE)
+
+#Fit normal distribution for study2
+library(fitdistrplus)
+fit <- fitdistr(dat_exp2$Age, "normal")
+class(fit)
+para <- fit$estimate
+hist(dat_exp2$Age, prob = TRUE)
+curve(dnorm(x, para[1], para[2]), col = 2, add = TRUE)
+
+
+#Calculate skewness for study1
+library(moments)
+skewness(dat_exp1$Age)
+
+#Calculate skewness for study2
+library(moments)
+skewness(dat_exp2$Age)
+```
+
+Understanding the distribution: For study1 and study2, the distribution of the age variable is shown in the plot. In study1, most of the data is concentrated on the left of the mean value (right-skewed). This was evident in the unbalanced number of subjects per age group. Furthermore, this is confirmed by checking the skewness for study 1. In the case of study2, the distribution is closer to a normal distribution. However, there is slight skewness (right-skewed), which shows more number of subjects in study2 are between 20-30 years of age.
+
+*Summarizing Ratings variable for each condition*
+```{r, echo=TRUE}
+
+#Check mean and median for study1 
+summary(dat_exp1$Rating)
+
+#Check mean and median for study2 
+summary(dat_exp2$Rating)
+
+#calculate mode for study1
+mode_var(dat_exp1$Rating)
+
+#calculate mode for study2
+mode_var(dat_exp2$Rating)
+
+#Calculate mean absolute deviation for study1
+X <- dat_exp1$Rating
+X.bar <- mean( X ) 
+AD <- abs( X - X.bar ) 
+AAD <- mean( AD ) 
+print( AAD )
+
+#Calculate mean absolute deviation for study2
+X <- dat_exp2$Rating
+X.bar <- mean( X ) 
+AD <- abs( X - X.bar ) 
+AAD <- mean( AD ) 
+print( AAD )
+
+#Calculate median absolute deviation for study1
+mad(dat_exp1$Rating)
+
+#Calculate median absolute deviation for study2
+mad(dat_exp2$Rating)
+
+#Calculate IQR for study1
+range(dat_exp1$Rating, na.rm=TRUE)
+IQR(dat_exp1$Rating)
+
+#Calculate IQR for study2
+range(dat_exp2$Rating, na.rm=TRUE)
+IQR(dat_exp2$Rating)
+
+#Calculate standard deviation for study1
+sd(dat_exp1$Rating)
+
+#Calculate standard deviation for study2
+sd(dat_exp2$Rating)
+
+#Fit normal distribution for study1
+fit <- fitdistr(dat_exp1$Rating, "normal")
+class(fit)
+para <- fit$estimate
+hist(dat_exp1$Rating, prob = TRUE)
+curve(dnorm(x, para[1], para[2]), col = 2, add = TRUE)
+
+#Fit normal distribution for study2
+fit <- fitdistr(dat_exp2$Rating, "normal")
+class(fit)
+para <- fit$estimate
+hist(dat_exp2$Rating, prob = TRUE)
+curve(dnorm(x, para[1], para[2]), col = 2, add = TRUE)
+
+#Calculate skewness for study1
+library(moments)
+skewness(dat_exp1$Rating)
+
+#Calculate skewness for study2
+library(moments)
+skewness(dat_exp2$Rating)
+```
+For study1 and study2 he mean and median of the ratings variable is approximately the same, i.e., 4 and 5 respectively. The mode is 5. The absolute deviation of the ratings variable from the mean and median is calculated for study1 and study2. Mean absolute deviation is 0.822262 for study1 and 0.9977526 for study2. The Median absolute deviation is 0 for both conditions. The IQR of the ratings variable is 1 for both conditions and the standard deviation is 1.095866 for study1 and 1.258073 for study2. The distribution of the ratings variable for bith conditions is shown in the plot. Most of the data is concentrated on the right (left-skewed) for both conditions. Furthermore, this is confirmed by checking the skewness.
+
+*Relationship between the age and ratings variable by condition*: Checking the correlation between age and ratings.
+``` {r, echo=TRUE}
+cor(dat_exp1$Age, dat_exp1$Rating)
+cor(dat_exp2$Age, dat_exp2$Rating)
+```
+
+**Create a plot that you think best visualizes the data. Try to avoid using the packages ‘ggplot’ or ‘ggplot2’, but preferrably use basic plotfunctions.**                         
+``` {r, echo=TRUE}
+
+#Split age variable into groups
+data$Agegrp<-cut(data$Age, seq(10,90,10), labels=c(1:8))
+
+#Subsetting data condition wise
+dat_exp1 <- subset(data, Condition == "Study1", select = c("Agegrp","Rating","Subject", "Condition", "Age"))
+dat_exp2 <- subset(data, Condition == "Study2", select = c("Agegrp","Rating","Subject", "Condition", "Age"))
+
+#Box plot displaying the Age and Ratings variable in study1
+plot(dat_exp1$Agegrp, dat_exp1$Rating, xlab="Age Group", ylab="Rating", main = "Ratings by age group in Study1")
+
+#Box plot displaying the Age and Ratings variable in study2
+plot(dat_exp2$Agegrp, dat_exp2$Rating, xlab="Age Group", ylab="Rating", main = "Ratings by age group in Study2")
+
+```
+
+**Calculate the average rating and the median rating for each individual participant using each of the three function (so calculate the same averages three times).**
+
+```{r, echo=TRUE}
+#Average rating per subject for study1 using tapply
+avg_rating_s1 <- tapply(dat_exp1$Rating, list(dat_exp1$Subject), mean)
+head(avg_rating_s1)
+
+#Average rating per subject for study2 using tapply
+avg_rating_s2 <- tapply(dat_exp2$Rating, list(dat_exp2$Subject), mean)
+head(avg_rating_s2)
+```
+```{r, echo=TRUE}
+#Median rating per subject for study1 using tapply
+median_rating_s1 <- tapply(dat_exp1$Rating, list(dat_exp1$Subject), median)
+head(median_rating_s1)
+
+#Median rating per subject for study2 using tapply
+median_rating_s2 <- tapply(dat_exp2$Rating, list(dat_exp2$Subject), median)
+head(median_rating_s2)
+```
+```{r, echo=TRUE}
+#Average rating per subject for study1 using aggregate
+avg_rating_agg_s1 <- aggregate(dat_exp1$Rating, list(dat_exp1$Subject), mean)
+head(avg_rating_agg_s1)
+
+#Average rating per subject for study2 using aggregate
+avg_rating_agg_s2 <- aggregate(dat_exp2$Rating, list(dat_exp2$Subject), mean)
+head(avg_rating_agg_s2)
+```
+```{r, echo=TRUE}
+#Median rating per subject for study1 using aggregate
+library('plyr')
+median_rating_agg_s1 <- aggregate(dat_exp1$Rating, list(dat_exp1$Subject), median)
+print(head(median_rating_agg_s1))
+
+#Median rating per subject for study2 using aggregate
+median_rating_agg_s2 <- aggregate(dat_exp2$Rating, list(dat_exp2$Subject), median)
+print(head(median_rating_agg_s2))
+
+#Average and median rating per subject for study1 using ddply
+aggre_ddp_s1 <- ddply(dat_exp1, c('dat_exp1$Subject'), summarise, 
+                   avg = mean(Rating), median = median(Rating))
+head(aggre_ddp_s1)
+
+#Average and median rating per subject for study2 using ddply
+aggre_ddp_s2 <- ddply(dat_exp2, c('dat_exp2$Subject'), summarise, 
+                   avg = mean(Rating), median = median(Rating))
+head(aggre_ddp_s2)
+```
+**What are the differences between the three functions?**
+The difference is in the format of the outputs. The tapply function returns an array, whereas the aggregate function returns a data frame. The ddply function is similar to the aggregate() in terms of the type of output returned, however, it accepts multiple parameters for calculating multiple measures.
+
+```{r, echo=TRUE}
+#Checking the output type
+class(avg_rating_s1)
+class(avg_rating_agg_s1)
+class(aggre_ddp_s1)
+```
+
+

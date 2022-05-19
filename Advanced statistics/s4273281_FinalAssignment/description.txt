@@ -1,0 +1,15 @@
+DESCRIPTION:
+
+30 native Dutch participants and 30 native Polish participants were trained in an artificial language, of which the phonotactic rules were more similar to Polish than Dutch. In other words, the words of the artificial language looked more like Polish words than Dutch words.
+
+The researchers aimed to investigate the influence of phonotactic similarity with the native language when learning a new language; i.e., does phonotactic similarity help or hinders learning a new language.
+
+The experiment took 3 days:
+
+- On the first day, participants had to do a pretest, which was a lexical decision task. They were presented with a letter string (a nonword in Dutch and Polish, but also not a word in related and well-known languages such as English, German, and Russian) and they had to judge whether this letter string would be a word or nonword in the artificial language. None of the participants was exposed to this artificial language before and the participants did not receive any information about this language before the test.
+
+- In the training phase, participants received a printed text of 10.000 words in the artificial language, which they could read at home. They were asked to highlight the words in the text that might be a verb.
+
+- On the third day, participants had to do a posttest, which was again a lexical decision task. They were presented with a letter string (a nonword in Dutch and Polish, but also not a word in related and well-known languages such as English, German, and Russian) and they had to judge whether this letter string would be a word or nonword in the artificial language. Note that they were presented with different strings than in the pretest.
+
+The accuracy of the participants' responses in the pre-tests and post-tests is represented in the column 'ACC'.

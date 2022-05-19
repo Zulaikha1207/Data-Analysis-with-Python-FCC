@@ -1,0 +1,848 @@
+---
+title: "Final Assignment<br/>Advanced Statistical Modeling 2021-2022"
+author: "Zulikah Latief, s4273281"
+date: "Start date: 26th January/ 3rd February 2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 4, fig.height = 4)
+rm(list=ls())
+```
+
+### Loading data and packages
+
+Set your working directory:
+
+```{r}
+setwd("C:/Users/user/Documents/MSC AI/MSC AI YEAR 2/Adv stats/R programming/s4273281_FinalAssignment")
+
+rm(list=ls())
+```
+
+Load packages:
+```{r echo=TRUE}
+library(ggplot2)
+library(lme4)
+library(mgcv)
+library(itsadug)
+library(dplyr)
+library(plyr)
+library(plotfunctions)
+# ... other packages
+```
+
+Load data:
+
+```{r}
+load("D13A.rda")
+
+# print the data description in R console:
+cat(description)
+# write the data description to a file:
+writeLines(description, "description.txt", sep = "")
+
+# head of data:
+head(dat)
+str(dat)
+```
+
+<p><br/></p>
+
+### Descriptive statistics
+
+As mentioned in the description, the items differ in the pre test and post test stage (but still have the same item name), it is good to differentiate between these items. 
+
+```{r}
+#subset data based on condition
+study1<- subset(dat, dat$Test == "pre") 
+study2<- subset(dat, dat$Test == "post") 
+
+#differentiate between item IDs for the two conditions
+study2$Item <- gsub('i', 's', study2$Item)
+
+#merge subsets
+dat2 <- rbind(study1, study2)
+```
+
+
+Examine each variable and design of the experiment:
+
+```{r}
+#check unique items
+n_distinct(dat2$Item)
+
+#examine items by test
+head(table(dat2$Test, dat2$Item))
+tail(table(dat2$Item, dat2$Test))
+
+#not all items had equal number of repeated measure
+head(table(dat2$Item))
+
+#subject by trial
+tail(table(dat2$Subject, dat2$Trial))
+
+#examine subject by test and type
+head(table(dat2$Subject, dat2$Test, dat2$Type))
+
+#examine trial by test: This shows that only 58 subjects took part in pre test, whereas 60 took part in post test
+head(table(dat2$Trial, dat2$Test))
+
+```
+
+The study contains 60 subjects, 30 polish and 30 Dutch natives. The study has a pre-test stage and a post-test stage wherein subjects are given artificially generated letter strings (items) of type word and non-word. There are a total of 120 items, 60 items in each Test stage. Note that the items across the two Test stages are different and not all items had equal number of repeated measures. Each subject's accuracy was recorded for correctly identifying the type (word/ non-word) of the presented item. During each of the Test stage (pre and post), each participant undergoes 30 trials (15 words and 15 non-words) and their accuracy is recorded. Thus, each subject has 60 trials (30 pretest and 30 post test), which makes a total of, 60 trials * 60 subjects = 3600 trials in the whole experiment.  However, subjects s048 and s049 (Polish and Dutch respectively) were not a part of the pretest stage, and thus each undergo a total of 30 trials in the post-test only. Therefore, there are a total of 3540 trials (60 trails for each of 58 subjects and 30 trials for each of the 2 subjects). Half of these trials, i.e., 1770 were of type word and the rest were of the type non-word. Furthermore, the design of the experiment in terms of within-subject and between-subject is not fixed. For instance, with respect to the variable Type, each subject is presented with both levels of the variable (word and nonword) which makes it within-subject. However, not all subjects takes part in both pre and post test conditions (s048 and s049 are excluded from pre-test). Moreover, with respect to the variable Language, each subject can only be in one of the levels (Dutch or Polish), which makes it a between-subject study.
+
+
+Checking for null values: The data has 106 NaN values for accuracy. We will remove these values as they account for a small percentage of the total trials.
+
+```{r}
+#there are 106 values in data 
+sum(is.na(dat2))
+
+#all of them are more the accuracy column
+sum(is.na(dat2$ACC))
+
+#removing the NA values
+dat2 <- na.omit(dat2)
+```
+
+Now let's inspect the data in more depth. The histogram for Accuracy suggests that there are higher number of acc=1 than acc=0.The qqnorm does not show any sign of a normal distribution, rather it shows two distinct lines as expected for a binary response variable. 
+
+```{r}
+hist(dat2$ACC)
+
+qqnorm(dat2$ACC)
+qqline(dat2$ACC)
+```
+
+
+Next, we perform aggregation and take by subject average of accuracy for all the conditions.
+
+
+```{r}
+avg <- ddply(dat2, c("Subject", "Test", "Language", "Type"),
+              summarise,
+              meanacc = mean(ACC))
+head(avg)
+```
+
+Next, the overall accuracy mean and standard error for the three conditions, i.e., 'Test', 'Type' and 'Language' is calculated.
+
+```{r}
+avg1 <- ddply(avg, c("Test", "Type", "Language"),
+              summarise,
+             ACC = mean(meanacc),
+             SE = se(meanacc))
+head(avg1)
+```
+
+Visualizing average accuracy across the conditions.
+
+```{r}
+ggplot(avg1, aes(Type, ACC, fill = Test)) +
+  geom_col(position = position_dodge(width = 1), color = "gray50") +
+  geom_errorbar(aes(ymin = ACC - SE, 
+                    ymax = ACC + SE), width = 0.25,
+                position = position_dodge(width = 1)) +
+  scale_fill_manual(values = c("darkseagreen3", "coral2")) +
+  facet_grid(.~Language, switch = "x") +
+  theme_bw() +
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        panel.border = element_blank(),
+        panel.spacing = unit(0, "points"),
+        axis.line = element_line())
+```
+
+The above graph shows the mean accuracy of Dutch and Polish subjects in the lexical decision task. For native Dutch speakers, the mean accuracy for type word and non-word during the pre test stage is lower when compared to post test stage. The mean accuracy for non-word type increases by a relatively small factor of ~0.1 in the post test stage. Interestingly, for type 'word', there is a dramatic increase in mean accuracy from ~0.3 (pre-test) to ~0.75 (post-test). Overall, the increase in mean accuracy from pre to post test is visible in both 'word' and 'non-word' type, however, the increase is highly significant for type 'word'.
+
+For native Polish speakers, the mean accuracy of type non-word is high at ~0.57 during the pre-test stage. However, this accuracy falls to ~0.49 during the post-test stage. For type 'word' there is a significant increase of ~0.2 in mean accuracy from pre test to post test stage. However, this increase is not as dramatic as seen in Dutch native speakers.
+
+Overall, native Polish speakers show a higher mean accuracy for all 'Type' and 'Test' categories. Specifically, native Polish speakers have a significantly higher mean accuracy for both 'word' and 'non-word' in the pre-test when compared to native Dutch speakers. However, the increase in mean accuracy during the post test stage for both categories of 'Type' is more significant for Dutch speakers. Moreover, the accuracy drops rather than increases for native Polish speakers during the post-test stage for type 'non-word'. 
+
+The barplot does not show any trends in the data. Thus, I will further use scatter plots to visualise the accuracy over trials.
+
+More visualizations portraying (1) average accuracy over trials for Dutch and Polish subjects and (2) average accuracy over trials for word and nonword type (3) average accuracy over trials for pre and post test
+
+```{r}
+#Average accuracy by trial by language
+avg_trial <- ddply(dat2, c("Trial", "Language"), 
+             summarise,
+            trial_meanACC = mean(ACC))
+head(avg_trial)
+
+#Average accuracy by trial by type
+avg_trial_type <- ddply(dat2, c("Trial", "Type"), 
+             summarise,
+            trial_meanACC = mean(ACC))
+head(avg_trial_type)
+
+#Average accuracy by trial by test
+avg_trial_test <- ddply(dat2, c("Trial", "Test"), 
+             summarise,
+            trial_meanACC = mean(ACC))
+head(avg_trial_test)
+```
+
+```{r}
+#plot for language
+emptyPlot(xlim=c(1, 30), ylim= c(0,1)) 
+title(main="Average accuracy over trials for Dutch and Polish", xlab="Trial", ylab="mean accuracy")
+
+points(avg_trial$Trial, avg_trial$trial_meanACC, 
+       pch=16, col=ifelse(avg_trial$Language=='Polish', 3, 1))
+
+legend_margin('centerright', legend = c("Polish", "Dutch"),
+       col=c(3, 1), pch = c(16, 16))
+
+
+#plot for type
+emptyPlot(xlim=c(1, 30), ylim= c(0,1)) 
+title(main="Average accuracy over trials for words and nonwords", xlab="Trial", ylab="mean accuracy")
+
+points(avg_trial_type$Trial, avg_trial_type$trial_meanACC, 
+       pch=16, col=ifelse(avg_trial_type$Type=='word', 4, 2))
+
+legend_margin('centerright', legend = c("word", "nonword"),
+       col=c(4, 2), pch = c(16, 16))
+
+
+#plot for test
+emptyPlot(xlim=c(1, 30), ylim= c(0,1)) 
+title(main="Average accuracy over trials for pre and post test stage", xlab="Trial", ylab="mean accuracy")
+
+points(avg_trial_test$Trial, avg_trial_test$trial_meanACC, 
+       pch=16, col=ifelse(avg_trial_test$Test=='pre', 6, 8))
+
+legend_margin('centerright', legend = c("pre", "post"),
+       col=c(6, 8), pch = c(16, 16))
+
+```
+
+
+The scatter plot does show an alternating pattern (high and low accuracy) in the accuracy over the trials for both Languages. Overall, the Polish maintain a higher accuracy. Similarly, the scatter plot for accuracy over trial by Type shows that words have a higher accuracy than non-words. There is a slight trend over the trials. Furthermore, for mean accuracy over trial by test, there is again a trend of higher and lower accuracy. Overall, the accuracy for post test stage is much higher.  This trend might be due to the confounding effects of the different conditions.
+
+### GLME Analysis
+
+For this part, a LME model will be used since we have repeated measures for subjects and items. Moreover, the response variable is binary which means that GLME can be used. The fixed effects are kept at their maximal by including all interactions between the different experimental manipulations (i.e., Type, Language, Test). For now, I will first focus on determining the structure of random effects. 
+
+### Determing the random effects structure: Random Intercepts 
+
+For random intercepts, I have considered Subject and Items since they have numerous repeated measures. 
+
+I start with a maximal fixed effect model that includes three way interactions between Test, Type and Language and use forward fitting to add random effects. First, I add only random intercepts for subjects and items.
+
+```{r}
+m0 <- glmer( ACC ~ Language * Type * Test  + (1|Item) + (1|Subject), data = dat2, family = binomial)
+summary(m0)
+```
+
+
+```{r}
+#Extracting the random effects for subject
+re <- ranef(m0)[['Subject']]
+head(re)
+
+#plot for avg accuracy by subjects
+acc <- tapply(dat2$ACC, list(dat2$Subject), mean)
+emptyPlot(range(re[,1]), ylim = c(0,1),
+          xlab="random intercept by subjects", ylab="mean accuracy",
+          xmark=TRUE, ymark=TRUE, las=1)
+points(re[,1], acc, pch=16, col=alpha("steelblue"))
+
+#qqnorm showing distribution of different subjects
+qqnorm(re[,1])
+qqline(re[,1])
+
+```
+
+
+
+### Random intercept for subjects interpreation
+
+The random intercepts for the subjects show two distinct trends (almost lines) of mean accuracy. This tells me that there might be two different types of subjects, i.e., native Dutch and native Polish speakers that show different average accuracy values. It can also be noted that the two clusters are mostly concentrated at the mid accuracy range ~0.5 - 0.7. The qqnorm plot shows clusters in the middle of the distribution. Towards the right end of the tail there seem to be two extreme values, which may indicate two subjects that have a higher accuracy. Furthermore, the qqnorm shows slight skewness on either side, subjects that have a lower accuracy (left end of the distribution) and subjects that have a higher mean accuracy (right end). Additionally, the model summary shows a relatively lower variance value of 3.101 and std deviation of 1.761 for random intercept of subjects. This suggests that not much variance can be explained by the mean accuracy produced by different subjects. However, by adding random slopes we can further make conclusions about this.
+
+```{r}
+#Extracting the random effects for items
+reitem <- ranef(m0)[['Item']]
+head(reitem)
+
+#plot for avg accuracy by items
+acc_item <- tapply(dat2$ACC, list(dat2$Item), mean)
+emptyPlot(range(reitem[,1]), ylim = c(0,1),
+          xlab="random intercept by items", ylab="mean accuracy",
+          xmark=TRUE, ymark=TRUE, las=1)
+points(reitem[,1], acc_item, pch=16, col=alpha("steelblue"))
+
+#qqnorm showing distribution of different items
+qqnorm(reitem[,1])
+qqline(reitem[,1])
+```
+
+
+
+### Random intercept for items interpreation
+
+The random intercepts for items show two distinct s shaped trends (almost curves) of mean accuracy. The cluster to the right is more concentrated throughout the accuracy range. However, there are more intercepts clustered at the extreme ends of this cluster. The left cluster (or s shaped trend) is sparse. Overall, both the trends move from negative intercept values to positive as accuracy goes from zero to one. This is more evident for the concentrated cluster of items. This tells me that there might be two different types of items, i.e., word and non-word, that show different average accuracy values. The qqnorm plot shows a high and low trend over the normal distribution line. It can also be seen that in the left tail end there are few items that have a higher accuracy than the distribution. The right end tail shows two extreme values that have a higher accuracy. Additionally, the model summary shows a high variance value of 25.742 and a std deviation of 5.074 for random intercept of items suggesting that there is high variability due to different items. By adding random slopes we can further make conclusions about this.
+
+### Determing the random effects structure: RANDOM SLOPES 
+
+(1 + Trail| Subject), (1|Subject) + (0+Trial|Subject) - This does not seem as relevant because this is not a reaction time task. 
+
+(1+Language|Subject) - This does not make sense to add because each subject has only one associated Language
+
+(1 + Type | Subject), (0 + Type | Subject) - This can be tested as subjects may vary in their accuracy across different levels of type (word and nonword).
+
+(1 + Test | Subject), (0 + Test | Subject) - This can be tested as subjects may vary in their accuracy across different stages, pre and post test. 
+
+(1 + Type| Item), (0 + Type | Item) - Does not make sense because the items were different over the two test phases.
+
+(1 + Test | Item), (0 + Test | Item) - Does not make sense because the items were different over the two test phases.
+
+(1 + Language | Item), (0 + Language | Item) - Does not make sense because the items were different over the two test phases.
+
+
+```{r}
+#Add (1+Type|Subject) as random slope:
+m1 <- glmer( ACC ~ Language * Type * Test  + (1+Type|Subject) + (1|Item), data = dat2, family = binomial)
+
+summary(m1)
+```
+
+From the summary, it can be seen that the variance associated with the intercept for subject and the random slop is low at 2.83835 an 0.02969 respectively. This suggests that this random slope does not explain much variance in the data.
+Moreover, the correlation between the intercept for subject Typenonword and random slope is high at 0.99. We shall use (0 + Type | Subject) to verify the correlation. 
+
+```{r}
+#Verify correlation
+m1a <- glmer( ACC ~ Language * Type * Test  + (0+Type|Subject) + (1|Item), data = dat2, family = binomial)
+
+summary(m1a)
+```
+
+Correlation is equal to 1, which is maximum. Thus this is not a useful random slope. Since the random slope and random intercept both explain the same amount of variance. 
+
+```{r}
+
+#Add (1+Test|Subject) as random slope:
+m2 <- glmer( ACC ~ Language * Type * Test  + (1+Test|Subject) + (1|Item), data = dat2, family = binomial)
+
+summary(m2)
+```
+
+
+From the random effects summary, the intercept representing the accuracy of subjects in Testpre accounts for a variance of 150.5 and a std deviation of 12.27.The random slope value which represents the difference in the average accuracy when you go from pre-test to post-test has a variance of 292.4 (std dev of 17.10). These variance values are higher than the previous m0 and m1 model in terms of random intercepts and random slopes for subject. Moreover, the random intercept associated with item has a much higher variance value of 674.1 (std deviation of 25.96) after adding the random slope for Test. The correlation parameter is high at -0.69. So, first I shall check the correlation by using (0+Test|Subject).
+
+
+```{r}
+#verifying for correlation between random intercept and random slope for 'Test'
+m2a <- glmer( ACC ~ Language * Type * Test  + (0+Test|Subject) + (1|Item), data = dat2, family = binomial)
+
+summary(m2a)
+```
+
+The correlation is insignificant at -0.02. Thus this random slop can be considered and checked through model comparison given that it explains a lot of variance. Plotting the random effects and fixed effects for m2.
+
+```{r}
+#checking correlations
+VarCorr(m2)
+
+#extract random effects for m1
+rem2 <- ranef(m2)[['Subject']]
+head(rem2)
+
+#visualizing the random effects
+emptyPlot(range(rem2[,1]), range(rem2[,2]), 
+     xlab="Intercept", ylab="Slope", 
+     main="(1 + Test | Subject)", 
+     xmark=TRUE, ymark=TRUE, las=1)
+points(rem2[,1], rem2[,2], pch=16, col="steelblue")
+```
+
+The random slope vs random intercept shows slight negative correlation as expected from the summary.
+
+```{r}
+fixm2 <- fixef(m2)
+
+emptyPlot(c(-.25, 1.25), c(-50,40),
+          v=c(0,1),
+          main="(1 + Test | Subject)",
+          xlab="Type",axes=FALSE)
+axis(1, at=c(0,1), labels=c("pre", "post"))
+axis(2, at=c(-50,40), las=1)
+for(i in 1:nrow(rem2)){
+  abline(a=fixm2[1]+rem2[i,1], b=fixm2[2]+rem2[i,2],
+         col=alpha("steelblue"))
+}
+abline(a=fixm2[1], b=fixm2[2], lwd=2)
+points(c(0,1), c(fixm2[1], fixm2[1]+fixm2[2]))
+```
+
+The above plot shows accuracy along both the Test (pre and post) for all subjects. Overall,the accuracy increases as you move from pre to post. However, some subjects show the opposite effect. There is a lot of variance among the subjects this can be seen through the crossing lines. We shall perform model comparison to check the random effect structure. Model m2 will be compared with the baseline model m0 that has a similar fixed effect structure along with random intercepts for subject and item.
+
+```{r}
+#model comparison to check for random effects structure
+anova(m0, m2, refit= FALSE)
+```
+
+Model with the random slope, m2, is significant. The ANVOA evaluates whether or not including Test as a random slope for subject leads to a significant improvement over using just the random intercept of subject. The chi-square test results show that the effect was significant, (χ2(2)=636.35, p< 2.2e-16). Therefore this will be our final random effect structure. 
+
+##Determing fixed effect structure
+
+First I shall reformat the interactions in the finalized random effect model. This allows to perform backward fitting in order to determine fixed effect structure.
+
+```{r}
+
+#rewrite model m2
+s0 <- glmer( ACC ~ Language + Type + Test + Language:Type + Language:Test + Type:Test + Language:Type:Test + 
+               (1+Test|Subject) + (1|Item) , data = dat2, family = binomial)
+summary(s0)
+
+#removing three way interaction
+s1 <- glmer( ACC ~ Language + Type + Test + Language:Type + Language:Test + Type:Test +  
+               (1+Test|Subject) + (1|Item) , data = dat2, family = binomial)
+summary(s1)
+
+#model comparison
+anova(s0, s1)
+```
+
+The ANVOA evaluates whether the three way interaction between Language, Test and Type is significant. The chi-square test results show insignificance, (χ2(1)=0, p= 1). Here, the model s0 and s1 both show same amount of deviance and there is no chi-square difference as well. For this reason, the simpler model, i.e., model without the three way interaction will be chosen for further comparison. Model s1 will be compared with three models each lacking one of the three, two way interactions.
+
+```{r}
+
+#removing Type:Test two way interaction
+s2 <- glmer( ACC ~ Language + Type + Test + Language:Type + Language:Test +  
+               (1+Test|Subject) + (1|Item) , data = dat2, family = binomial)
+summary(s2)
+
+#model comparison
+anova(s1, s2)
+```
+
+Here, model s1 with the Type:Test two way interaction is better (χ2(1)=12.429, p = 0.0004227).
+
+```{r}
+#removing  Language:Test two way interaction
+s3 <- glmer( ACC ~ Language + Type + Test + Language:Type + Type:Test +  
+               (1+Test|Subject) + (1|Item) , data = dat2, family = binomial)
+summary(s3)
+
+#model comparison
+anova(s1, s3)
+```
+
+Again, model s1 (χ2(1)=13.65, p = 0.0002202) is better.
+
+```{r}
+#removing Language:Type two way interaction
+s4 <- glmer( ACC ~ Language + Type + Test +  Type:Test + Language:Test + 
+               (1+Test|Subject) + (1|Item) , data = dat2, family = binomial)
+summary(s4)
+
+#model comparison
+anova(s1, s4)
+```
+
+Both models are almost the same. Model with Language:Type two way interaction is slightly better. Since there is barely any difference between the two models, the simper model s4 can be considered as the final model. The mode comparison will stop here.
+
+
+### Evaluating the best fitting model
+Note that I am aware the that accuracy is represented in log odds scale. 
+Below, the residuals of the final model are extracted and compared with a fixed effect only model to show whether the pattern in the residuals has reduced. The qqnorm plot shows that the residuals are not normally distributed. The extreme tail ends show ends show larger magnitude residual values. For lower accuracy the residuals are negative and large and for higher accuracy, the residuals are positive and high in magnitude as well. The second residual plot shows that the smaller magnitude residuals are very concentrated and high magnitude residuals are sparse. Thus there is a pattern in the residuals that has not been accounted for. This maybe a missing fixed effect or a random effect.
+
+```{r}
+#checking the residuals of the model with fixed effects only
+modelFixed <- glm( ACC ~ Language + Type + Test +  Type:Test + Language:Test 
+                , data = dat2, family = binomial)
+summary(modelFixed)
+
+#residuals of fixed effect model only
+qqnorm(resid(modelFixed))
+qqline(resid(modelFixed))
+
+# extract residuals fixed effect model
+resmf <- resid(modelFixed)
+
+# residuals for fixed effect model
+plot(resmf, pch=16)
+abline(h=0, lwd=.5)
+
+
+#residuals of final model s4
+qqnorm(resid(s4))
+qqline(resid(s4))
+
+# extract residuals of final model s4
+ress4 <- resid(s4)
+
+# residuals plotted of final model s4
+plot(ress4, pch=16)
+abline(h=0, lwd=.5)
+```
+
+
+
+Checking for autocorrelation: The fixed effect model shows autocorrelation as seen from the relatively high lag1 value. The final model s4 does not show autocorrelation. 
+
+```{r}
+acf(resid(modelFixed))
+acf(resid(s4))
+```
+
+Checking if there are any unnecessary random effect structure. 
+
+```{r}
+r1 <- rePCA(s4)
+r1
+
+plot(r1$Subject)
+```
+
+
+
+Both the random effect terms account for variance in the data thus they are kept as is. The model convergence warnings only seem to stop when I remove the random slope for Subject. I am unsure of why this problem occurs. I have tried changing the structure of the random effects and switching from 1+ to 0+ but it does not work. Here's a simpler model that does not result in model convergence issues but has a higher amount of residuals.
+
+```{r}
+a <- glmer( ACC ~ Language + Type + Test + Type:Test + Language:Test + 
+               (1|Subject) + (1|Item) , data = dat2, family = binomial)
+summary(a)
+
+#residuals 
+qqnorm(resid(a))
+qqline(resid(a))
+
+# extract residuals
+resa <- resid(a)
+
+# residuals plotted
+plot(resa, pch=16)
+abline(h=0, lwd=.5)
+```
+
+
+### Plots for the final model
+
+The fitted vs residual plot shows a clear pattern wherein extreme accuracy values have higher number of residuals that are low in magnitude. As the accuracy goes from 0 to 0.5, the residuals go from highly concentrated small values to sparse and large negative values. At ~0.6 accuracy, there is a flip in the residuals. The residuals are high in magnitude and positive and become more concentrated and low in magnitude towards accuracy value 1. There is a clear distinction of two trends. I am unsure of whether this is due to the two languages or the two words. This structure maybe due to the two different language groups or it may also be due to some unexplained effect.
+
+```{r}
+plot(fitted(s4), resid(s4),
+     xlab="Fitted s4", ylab="Resid",
+     pch=16, col=alpha("steelblue"), bty='n')
+abline(h=0, col=alpha(1, f=.25))
+```
+
+Plotting residuals for each condition in order to check if they are correlated. 
+
+```{r}
+boxplot(resid(s4) ~ dat2$Language)
+abline(h=0, lwd=.5)
+
+boxplot(resid(s4) ~ dat2$Test)
+abline(h=0, lwd=.5)
+
+boxplot(resid(s4) ~ dat2$Type)
+abline(h=0, lwd=.5)
+
+boxplot(resid(s4) ~ dat2$Trial)
+abline(h=0, lwd=.5)
+
+
+ggplot(dat2, aes(x = Language, y = ress4)) + geom_jitter()+
+    theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+ggplot(dat2, aes(x = Test, y = ress4)) + geom_jitter()+
+    theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+ggplot(dat2, aes(x = Type, y = ress4)) + geom_jitter()+
+    theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+ggplot(dat2, aes(x = Subject, y = ress4)) + geom_jitter()+
+    theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+hist(resid(s4))
+
+```
+
+
+Each condition shows a similar pattern. The residuals are concentrated at the smaller values and sparse at large residual values. I do not see any other pattern. 
+
+### Extracting predicted and fitted values
+
+```{r}
+dat2$fitted <- fitted(s4)
+head(dat2)
+
+dat2$predict.1 <- predict(s4)
+head(dat2)
+
+plot(fitted(s4), dat2$A1)
+abline(a=0,b=1)
+
+```
+
+Retrieve model estimates for each condition: 
+
+```{r}
+
+dat2$Language <- as.factor(dat2$Language)
+levels(dat2$Language)
+
+dat2$Type <- as.factor(dat2$Type)
+levels(dat2$Type)
+
+dat2$Test <- as.factor(dat2$Test)
+levels(dat2$Test)
+
+#add new data frame
+newd <- expand.grid(Type = levels(dat2$Type),
+                    Language= levels(dat2$Language), 
+                    Test= levels(dat2$Test))
+
+#add one subject and one item
+newd$Subject <- levels(dat2$Subject)[1]
+newd$Item <- levels(dat2$Item)[1]
+
+# fitted effects on logit scale,
+# excluding random effects:
+newd$fit <- predict(s4, newdata = newd, re.form =NA, type='link')
+
+# convert back to proportion scale:
+newd$prop <- plogis(newd$fit)
+
+# show estimates:
+newd
+```
+
+```{r}
+
+ggplot(newd, aes(Type, prop, fill = Test)) +
+  geom_col(position = position_dodge(width = 1), color = "gray50") +
+  geom_errorbar(aes(ymin = prop, 
+                    ymax = prop), width = 0.25,
+                position = position_dodge(width = 1)) +
+  scale_fill_manual(values = c("darkseagreen3", "coral2")) +
+  facet_grid(.~Language, switch = "x") +
+  theme_bw() +
+  theme(strip.placement = "outside",
+        strip.background = element_blank(),
+        panel.border = element_blank(),
+        panel.spacing = unit(0, "points"),
+        axis.line = element_line())
+
+```
+
+
+The model estimates show that Dutch native speaker has accuracy of 0 for nonwords across both pre and post test stage. However, there is a slight increase in accuracy during the post test stage. Whereas, for native polish speaker, pre-test stage has a high accuracy of 1 for nonwords and this drops drastically during the post test stage. For the word type, native Dutch speaker starts of with an accuracy of 0 during the pre test but after the training the accuracy shoots to 1 during the post test. On the other hand, for the native polish speaker the accuracy for word type remains consistent across both pre and post test stage.
+
+My conclusion is that although Polish native speakers have an overall higher accuracy, it is more difficult for them to learn the artificial language. We know that the words presented are more similar to Polish. During the pre test stage the accuracy for both words and nonwords are high for native polish speakers. However, after the training process, the nonword accuracy drops drastically. This maybe because the nonwords are probably not similar to Polish (unlike the words) and this might confuse the subjects. It could also be that nonwords in general result in lower accuracy. However, from the data (bar plot in section1) we know that the accuracy of nonwords for native Dutch increases after the training. This is not the case for native Polish speakers. The underlying research focuses on understanding whether or not Polish speakers have an advantage in learning the artificial language. Since, their accuracy drops for nonwords (rather than increase), it suggests that the Polish native speakers do not have an advantage. They infact might be at the disadvantage. On the other hand, Dutch speakers start out with low accuracy for both words and non-words but after training their accuracy either increases or remains the same, but it does not decrease.
+
+### GAMM Analysis
+
+We begin with three way interactions between the 3 experimental conditions and add non linear interactions between trial and three conditions to determine the fixed effect using forward fitting.
+
+```{r}
+
+dat2$Subject <- as.factor(dat2$Subject)
+dat2$Item <- as.factor(dat2$Item)
+dat2$Language<- as.factor(dat2$Language)
+dat2$Trial<- as.numeric(dat2$Trial)
+
+#maximal fixed effect model with three way interaction
+g1 <- bam(ACC ~  Type * Test * Language, 
+          data=dat2, family = 'binomial', method = 'ML')
+summary(g1)
+
+#add non-linear interaction between TRial and TYpe
+g2 <- bam(ACC ~  Type * Test * Language + s(Trial, by=Type), 
+          data=dat2, family = 'binomial', method = 'ML')
+summary(g2)
+
+#model comparison
+compareML(g1, g2)
+
+#add non-linear interaction between TRial and Test
+g3 <- bam(ACC ~  Type * Test * Language + s(Trial, by=Test), 
+          data=dat2, family = 'binomial', method = 'ML')
+summary(g3)
+
+#model comparison
+compareML(g1, g3)
+
+
+#add non-linear interaction between TRial and Language
+g4 <- bam(ACC ~  Type * Test * Language + s(Trial, by=Language), 
+          data=dat2, family = 'binomial', method = 'ML')
+summary(g4)
+
+#model comparison
+compareML(g1, g4)
+```
+All the non-linear interactions are insignificant. The summary of g2, g3, g4 show that the estimate of smooth terms containing non-linear interaction between Trial and each of the three (Type, Test, Language) have edfs which are not significantly different from 1. Thus these terms are not considered. The current three way interaction model g1 is used. This model has no non-linear interaction or terms yet. Now, I shall perform backward fitting to check if all the interactions are significant.
+
+### Random Effects
+
+I will first add random intercept for Item and Subject
+```{r}
+q1 <- bam(ACC ~  Type * Test * Language + s(Subject, bs='re') + s(Item, bs='re'), 
+          data=dat2, family = 'binomial')
+summary(q1)
+
+# PLOT 1
+qqnorm(resid(q1))
+qqline(resid(q1))
+# PLOT 2:
+plot(fitted(q1), resid(q1))
+abline(h=0)
+plot(dat2$Trial, resid(q1))
+abline(h=0)
+# PLOT 3:
+acf(resid(q1))
+```
+
+
+
+From the summary, Subject and Item smooth terms are significantly different from 1. This denotes that they are not linear. 
+On plotting the residuals, it can be seen that this model is not so different from the GLME model. The qqnorm and residual plot shows the same distribution. QQnorm shows a non normal distribution of residuals. Residuals at the left tail end are lower than normal distribution and the right tail end are higher. Residuals vs fitted shows two curve lines. The lower curve line has concentrated residuals and lower residual values. The concentration gets more sparse as the accuracy goes from 0 to 1, whilst the residual values increase in magnitude. The higher cuve follows the opposite trend to the lower curve line. This suggests two almost two opposing effects on the mean accuracy. ACF plot shows correlation of approx 0.1 at lag1 and the next few lags also have a higher value.
+
+Now I shall try to improve the model fit by adding more random effects.
+
+```{r}
+
+dat2$Trial <- as.numeric(dat2$Trial)
+dat2$Subject <- as.factor(dat2$Subject)
+dat2$Item <- as.factor(dat2$Item)
+
+
+q2 <- bam(ACC ~  Type * Test * Language + s( Subject,Trial, bs='fs', m=1) + s(Item, bs='fs'), 
+          data=dat2, family = 'binomial')
+summary(q2)
+
+# PLOT 1
+qqnorm(resid(q2))
+qqline(resid(q2))
+# PLOT 2:
+plot(fitted(q2), resid(q2))
+abline(h=0)
+plot(dat2$Trial, resid(q2))
+abline(h=0)
+# PLOT 3:
+acf(resid(q2))
+```
+
+
+From the residuals it can be seen that there is not much of a difference between this and the previous model. Since most of the variables are categorical, a smooth term cannot be included. There are no obvious outliers and nothing is known about the residuals except for there are two distinct clusters/trends in the residuals. Moreover, the data cannot be transformed into log or inverse since it is binary data.
+
+I shall now try to remove any fixed effects from q1 that do not add to the variance and reduce the autocorrelation. 
+
+```{r}
+#rewite q1 for backward fitting
+a1 <- bam( ACC ~ Language + Type + Test + Language:Type + Language:Test + Type:Test + Language:Type:Test
+           +  s(Subject, bs='re') + s(Item, bs='re'),
+           data = dat2, family = binomial, method='ML')
+summary(a1)
+
+#remove threeway interaction Language:Type:Test
+a2 <- bam( ACC ~ Language + Type + Test + Language:Type + Language:Test + Type:Test 
+           +  s(Subject, bs='re') + s(Item, bs='re'),
+           data = dat2, family = binomial, method='ML')
+summary(a2)
+
+compareML(a1, a2)
+
+```
+The comparison shows that both the models are almost the same and model a2 has a lower AIC. I will choose the simpler model a2 and continue model comparision by removng two way interactions.
+
+```{r}
+
+#remove two way interaction Type:Test 
+a3 <- bam( ACC ~ Language + Type + Test + Language:Type + Language:Test 
+           +  s(Subject, bs='re') + s(Item, bs='re'),
+           data = dat2, family = binomial, method='ML')
+summary(a3)
+
+compareML(a2, a3)
+
+```
+Model a2 has lower AIC, however, the difference between the models is negigible. 
+
+```{r}
+
+#remove two way interaction Language:Test
+a4 <- bam( ACC ~ Language + Type + Test + Language:Type  + Type:Test
+           +  s(Subject, bs='re') + s(Item, bs='re'),
+           data = dat2, family = binomial, method='ML')
+summary(a4)
+
+compareML(a2, a4)
+
+```
+
+The model comparison results indicate that a2 has lower AIC, with AIC difference of -130.47. It is the better model and hence a2 is preffered.
+
+```{r}
+
+#remove two way interaction  Language:Type  
+a5 <- bam( ACC ~ Language + Type + Test + Language:Test + Type:Test
+           +  s(Subject, bs='re') + s(Item, bs='re'),
+           data = dat2, family = binomial, method='ML')
+summary(a5)
+
+compareML(a2, a5)
+
+```
+The model comparison results indicate that a2 has lower AIC and it is prefered. We have compared a2 (full two way interactions) with a3, a4 and a5. Model a3 showed same variance as a2 and hence the simpler model, a3 will be chosen. This is the final fixed effect model.
+
+```{r}
+a3 <- bam( ACC ~ Language + Type + Test + Language:Type + Language:Test 
+           +  s(Subject, bs='re') + s(Item, bs='re'),
+           data = dat2, family = binomial, method='ML')
+summary(a3)
+
+# PLOT 1
+qqnorm(resid(a3))
+qqline(resid(a3))
+# PLOT 2:
+plot(fitted(a3), resid(a3))
+abline(h=0)
+plot(dat2$Trial, resid(a3))
+abline(h=0)
+# PLOT 3:
+acf(resid(a3))
+```
+
+The qqnorm and residuals vs fitted looks the older models. However, there is still autocorrelation. Next, I shall correct for autocorrelation. Constructing a new dataset that takes each trial as a separate time series and using rho value to correct for autocorrelation. Building AR1 mode.
+
+```{r}
+dat3 <- start_event(dat2, column="Trial", event=c("Subject", "Item"))
+
+#get lag1 value of model f1
+acf(resid(a3), plot=FALSE)$acf[2]
+
+#set rho value
+rho <- 0.1030278
+
+dat3$Item <- as.factor(dat3$Item)
+dat3$Subject <- as.factor(dat3$Subject)
+
+#setting random intercepts as random smooths to reduce correlation
+q1.rho <- bam( ACC ~ Language + Type + Test + Language:Type + Language:Test 
+           +  s(Subject, bs='fs') + s(Item, bs='fs'), 
+           family = 'binomial',
+          data=dat3,
+        AR.start=dat3$start.event, rho=rho)
+summary(q1.rho)
+save(q1.rho, file="q1rho.rda", compress='xz')
+
+#VISUALIZATION
+# PLOT 1
+qqnorm(resid(q1.rho))
+qqline(resid(q1.rho))
+# PLOT 2:
+plot(fitted(q1.rho), resid(q1.rho))
+abline(h=0)
+# PLOT 3:
+acf(resid(q1.rho))
+```
+
+The autocorrelation is now been corrected for. In conclusion, I think that using GAMMs for data that is mostly categorical predictors is not ideal because you cannot find non-linearity, i.e., add a smooth terms to categorical variables. Thus, it would be of no use. GLME does allow to add slopes to categorical predictors and I think it was a better model. I did not see any non-linear trend output from the GAMMs model. 
+

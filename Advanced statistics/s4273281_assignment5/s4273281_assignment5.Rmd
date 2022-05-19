@@ -1,0 +1,514 @@
+---
+title: "Assignment 5"
+author: "Zulikah Latief (s4273281)"
+date: "1/12/2022"
+output: 
+  html_document:
+  toc: true
+---
+
+```{r, echo=FALSE}
+rm(list=ls())
+setwd("~/MSC AI/MSC AI YEAR 2/Adv stats/R programming/s4273281_assignment5")
+```
+
+```{r, echo=FALSE}
+#load packages
+library(plyr)
+library(plotfunctions)
+library(mgcv)    # for GAMM
+library(itsadug) # for visualization
+library(ggplot2)
+```
+
+```{r, echo=TRUE}
+#load data
+load("data_DykesRivers.rda")
+head(dat)
+table(dat$Subject, dat$Condition)
+unique(dat$Subject)
+tail(dat)
+```
+This is a between subject study. Each subject only takes part in 1 of the three conditions.
+
+## Analysis
+
+### Question 1: Data
+**Inspect the reaction times (column RT). Include the code and your answers to the following questions:**
+
+**Describe the range of the reaction times, and check for outliers. (If you would find outliers, describe why and how you removed these and also calculate how many observations you removed.)**
+
+The reaction times range between 169.5251ms and 5775.1789ms. Outliers can be seen in the boxplot below. There are no obvious outliers in the RT (i.e., no negative or zero RT) and thus no data is removed.
+
+```{r, echo=TRUE}
+#Median RT
+median(dat$RT)
+#Mean RT
+mean(dat$RT)
+#Range RT
+range(dat$RT)
+#boxplot for RT
+boxplot(dat$RT, main="Reaction time",
+   xlab="Reaction time in ms", horizontal = TRUE)
+#Boxplot of RT by Condition
+boxplot(RT~Condition,data=dat, main="Reaction time by condition",
+   xlab="Reaction time in ms", ylab="Condition", horizontal = TRUE)
+```
+
+**Visualize and describe the distribution of the reaction times.**
+
+The qqnorm plot shows that the reaction times do not follow a strict normal distribution. It is skewed on both the tail ends. The data points that spread between 150ms to ~900ms have lower values and the observation above ~2300ms have higher values. It can also be observed that the distribution is more skewed on the right tail end and has a higher peak which resembles a T distribution. 
+
+```{r, echo=TRUE}
+#qqplot to visualise distribution of RTs
+qqnorm(dat$RT)
+qqline(dat$RT)
+#check distribution of reaction times with respect to normal distribution
+check_normaldist(dat$RT, xlab = 'reaction time (ms)')
+#historgram of RTs
+hist(dat$RT, xlab = 'reaction time (ms)', main = 'Histogram for RTs')
+```
+
+**List the predictors that you would like to include as random effects. Explain why this predictor/these predictors/combinations of predictors should be included as random effects rather than fixed effects.**
+
+Condition can be taken as a fixed effect since it is an experimental manipulation. Prev duration can also be a fixed effect since we want to know if this long interval duration (i.e., prev duration) effects the estimation of the short interval.
+
+Subjects can be taken as random effects since each subject might differ in their reaction times and we would want to generalize over new subjects. Trails and blocks can also be considered as random effects because in RT tasks the performance over the trails may change due to fatigueness. Since we want to check whether a change in the duration of the long intervals affects the short intervals it might be relevant to check whether over trails (or block) this affect varies. 
+
+## Question 2: Setup baseline model
+
+**Setup a GAM model (i.e., without random effects) that includes the nonlinear interaction between Condition and Trial (which marks the trial sequence). Run the model and include the code in your report.**
+
+```{r, echo=TRUE}
+m1 <- bam( RT ~  Condition + s(Trial, by = Condition), data=dat)
+summary(m1)
+```
+
+**Inspect the model fit by running the standard residual plots (the code is provided below). Use these plots to evaluate how the model meets the regression assumptions. What is your conclusion?**
+
+```{r, echo=TRUE}
+# PLOT 1
+qqnorm(resid(m1))
+qqline(resid(m1))
+# PLOT 2:
+plot(fitted(m1), resid(m1))
+abline(h=0)
+plot(dat$Trial, resid(m1))
+abline(h=0)
+# PLOT 3:
+acf(resid(m1))
+#boxplot
+boxplot(resid(m1) ~ dat$Trial)
+abline(h=0)
+#smooth plot showing the RTs by condition
+plot_smooth(m1, view="Trial", plot_all="Condition")
+#create histogram of residuals m1
+ggplot(data = dat, aes(x = m1$residuals)) +
+    geom_histogram(fill = 'steelblue', color = 'black') +
+    labs(title = 'Histogram of Residuals m1', x = 'Residuals', y = 'Frequency')
+```
+
+
+qqnorm plot shows that the residuals do not follow a normal distribution (like the data). The residuals on the left end of the distribution are lower and the values on the right tail are higher. Overall, the distribution of residuals is skewed on both the tail ends (like the data).
+
+resid vs fitted values shows a pattern of highly concentrated residuals followed by less concentrated residuals. For instance, the residuals below 2000ms start highly concentrated and gradually reduce in magnitude and density until around 2010ms. Post this, there is again a high concentration of residuals for a few ms, after which the concentration and magnitude reduces. This pattern occurs again at around 2100ms and between  ~2140ms and ~2190ms. However, between ~2140ms and ~2190ms, the concentration and magnitude is relatively much higher. Overall, the magnitude of the residuals seem to increase with higher RTs. There is a clear pattern in the residuals.
+
+resid vs trial shows an almost similar trend of residuals over the trials. There are slightly more higher magnitude residual values until the first 100 trials and towards the last 250-350 trials. The residuals mostly have higher RTs values than lower.
+
+ACF lag 1 has a value close to 0.2 which suggests that there is a correlation between successive RTs. Furthermore, over the lags apattern of high-low ACF values can be seen.
+
+Finally, the smooth plot shows the effect of the non-linear interaction between Trails and Condition on the RTs. For all three conditions, the error bars are wider in the beginning and end trials. Moreover, the box plot shows that over some cluster of trials the residuals are more concentrated.
+
+## Question 3: Improve model fit
+
+**Include random effect(s). Answer the following questions: Explain why you prefer the random effect(s) your selected to include. Run the model and include the code and summary in your report.**
+
+ To allow for the effect of the experiment to be generalized to people outside the study 'Subject' is modeled as a factor smooth over 'Trial' (to account for any non-linearity over the trials). A non-linear interaction between trial and condition is considered to evaluate if the RTs may differ over the trials for different conditions. This is relevant to understanding the hypothesis of the experiment. 
+
+```{r, echo=TRUE}
+dat$Subject <- as.factor(dat$Subject)
+
+m2 <- bam( RT ~ Condition +  s(Trial, by = Condition) + s(Trial, Subject, bs='fs', m=1), data=dat)
+summary(m2)
+
+```
+
+**Inspect the model fit by running the standard residual plots (the code is provided below). Use these plots to evaluate how the model meets the regression assumptions. What is your conclusion?**
+
+```{r, echo=TRUE}
+# PLOT 1
+qqnorm(resid(m2))
+qqline(resid(m2))
+# PLOT 2:
+plot(fitted(m2), resid(m2))
+abline(h=0)
+plot(dat$Trial, resid(m2))
+abline(h=0)
+# PLOT 3:
+acf(resid(m2))
+#smooth plot showing the RTs by condition
+plot_smooth(m2, view="Trial", plot_all="Condition")
+#create histogram of residuals m2
+ggplot(data = dat, aes(x = m2$residuals)) +
+    geom_histogram(fill = 'steelblue', color = 'black') +
+    labs(title = 'Histogram of Residuals m2', x = 'Residuals', y = 'Frequency')
+#check normal distribution graph for residuals of m2
+check_normaldist(m2$residuals, xlab = 'reaction time (ms)', title = 'residuals distribution m2')
+#boxplot
+boxplot(resid(m2) ~ dat$Trial)
+abline(h=0)
+
+```
+
+qqnorm plot shows that the residuals do not follow a normal distribution (like the data and model m1). The residuals on the left end of the distribution are lower and the values on the right tail are higher. Overall, the residuals have a skewed distribution (on both ends). 
+
+resid vs fitted for m2 shows a wider range of fitted values in comparison to ml. The residuals show a slight alternating pattern in concentration of residuals like seen in m1 (although since the scales vary, they cannot be compared). However, the residuals show a slight trend of normal distribution. It is also evident from the plot that there are far more residuals towards the right end which suggests that the residuals follow a right-skewed distribution. 
+
+resid vs trial plot is similar to m1. There is not much difference in the concentration or magnitude of the residuals.
+
+ACF lag 1 does not show correlation anymore. There is however a slight trend of alternating high and low ACF values as seen with model m1. However, this trend is much less evident.
+
+Finally, the smooth plot shows the summed effect of the non-linear interaction between Trails and Condition on the RTs. The difference between the smooth plot of m1 and m2 is in the confidence interval which is much wider throughout all the trials instead of just the first and last few trials as seen in model m1. 
+
+**Based on your conclusions of Question 3b, do you think that further data cleaning and/or transformation is required?**
+
+I think a log transformation of the RT and inverse transformation can be tried because the residuals are still skewed.
+
+```{r, echo=TRUE}
+#log transform RT
+dat$logRT <- log(dat$RT)
+
+m2l <- bam( logRT ~ Condition +  s(Trial, by = Condition) + s(Trial, Subject, bs='fs', m=1), data=dat)
+summary(m2l)
+
+
+#inv transform
+dat$invRT <- -1000/dat$RT
+
+m2i <- bam( invRT ~ Condition +  s(Trial, by = Condition) + s(Trial, Subject, bs='fs', m=1), data=dat)
+summary(m2i)
+```
+```{r, echo=TRUE}
+
+#visualization
+par(mfrow=c(1,3), cex=1.1)
+# PLOT 1
+qqnorm(resid(m2l), pch=16, col=alpha("#00B0F0"))
+qqline(resid(m2l))
+
+# PLOT 2
+emptyPlot(range(fitted(m2l)), range(resid(m2l)),
+    h0=0,
+    xlab="Fitted", ylab="Resid",
+    xmark=TRUE, ymark=TRUE, las=1)
+points(fitted(m2l), resid(m2l), pch=16, col=alpha("#00B0F0"))
+
+# PLOT 3
+acf(resid(m2l))
+
+
+par(mfrow=c(1,3), cex=1.1)
+# PLOT 1
+qqnorm(resid(m2i), pch=16, col=alpha("#00B0F0"))
+qqline(resid(m2i))
+
+# PLOT 2
+emptyPlot(range(fitted(m2i)), range(resid(m2i)),
+    h0=0,
+    xlab="Fitted", ylab="Resid",
+    xmark=TRUE, ymark=TRUE, las=1)
+points(fitted(m2i), resid(m2i), pch=16, col=alpha("#00B0F0"))
+
+# PLOT 3
+acf(resid(m2i))
+
+```
+
+It is difficult to interpret and compare these plots since they are on different scales. Thus a model comparison can be done.
+
+
+```{r, echo=TRUE}
+m2 <- bam( RT ~ Condition +  s(Trial, by = Condition) + s(Trial, Subject, bs='fs', m=1), data=dat, 
+           method ='ML')
+summary(m2)
+
+m2l <- bam( logRT ~ Condition +  s(Trial, by = Condition) + s(Trial, Subject, bs='fs', m=1), data=dat,
+            method='ML')
+summary(m2l)
+
+m2i <- bam( invRT ~ Condition +  s(Trial, by = Condition) + s(Trial, Subject, bs='fs', m=1), data=dat,
+            method='ML')
+summary(m2i)
+
+#model comparison
+compareML(m2, m2l)
+compareML(m2, m2i)
+```
+
+There is no significant difference between the models. Thus transforming to log or inverse is not beneficial. I will stick to model m2 for now.
+
+## Question 4: Interpretation and significance testing
+
+**Print the summary of model m2 (the final result of Question 3). Explain what you can conclude from the summary about the effects of Condition and Trial.**
+
+```{r, echo=TRUE}
+summary(m2)
+```
+
+The fixed effect of condition is significant only for the DR condition (refernce level) which has a p <2e-16 and t-value of 76.939. For condition FF and RD the estimates represent the difference between each of FF, RD and refernce level DR. Condition FF and condition RD have p values of 0.0502 and 0.7425 respectively, indicating that the intercept difference in the conditions with respect to reference level (DR) is not significant for predicting RTs. Furthermore, the t-value of conditionRD is 0.329 which suggests that it is not different from zero when compared to reference level. This is also the case for conditionFF which has a relatively higher t-value of 1.959.
+
+The smooth terms showing the non-linear interaction between Trial and different Condition. The interaction between s(Trial):ConditionDR is significant with p = 0.00116 and F of 3.895 which is significantly different from zero. The edf is 4.639 which is significantly different from 1 indicating a wiggly curve.
+
+The interaction between s(Trial):ConditionFF is not significant with p = 0.58018 and F value of 0.307 which is not significantly different from zero. The edf is 1.001 which is not significantly different from 1.
+
+The interaction between s(Trial):ConditionRD is very significant with p = 8.88e-05 and F of 4.576 which is significantly different from zero. The edf is 6.649 which is significantly different from 1 indicating a wiggly curve.
+
+The factor smooth term s(Trial,Subject) is very significant with a p < 2e-16 and F value of 2.650 which is different from zero. The edf is 175.917 which is significantly different from 1 indicating a wiggly curve.
+
+Based on the summary, the estimated non-linear interaction between Trial:ConditionDR and Trial:ConditionRD, are significant. However, we cannot tell whether there is a difference in RTs for the three conditions over time.
+ Finally, the factor smooth term s(Trial,Subject) is evidently significant suggesting that over the trials, the RTs of subjects differ significantly, thus this term accounts for the variance in the data. Lastly, the deviance explained is extremely low and which may suggest that the fixed effects and non-linear interactions in model m2 do not account for all variance in the data. prev.Duration may be a good fixed effect addition to the model.
+
+**Visualize the effects of Condition and Trial using the function plot_smooth and the differences between conditions using the function plot_diff. Include the following in your R Markdown report:**
+
+```{r, echo=TRUE}
+
+par(mfrow=c(2,2), cex=0.7)
+
+plot_smooth(m2, view="Trial", plot_all="Condition",
+      main="Summed effects",
+      xmark=range(dat$Trial), ymark=TRUE, las=1)
+
+plot_diff(m2, view="Trial", comp=list(Condition=c('RD','DR')),
+      xmark=range(dat$Trial), ymark=TRUE, las=1)
+
+plot_diff(m2, view="Trial", comp=list(Condition=c('RD','FF')),
+      xmark=range(dat$Trial), ymark=TRUE, las=1)
+
+plot_diff(m2, view="Trial", comp=list(Condition=c('DR','FF')),
+      xmark=range(dat$Trial), ymark=TRUE, las=1)
+```
+
+
+The summed effects plot shows alternate peaks and trough of conditionRD and conditionDR respectively which suggests that over trials the RTs differs for these conditions. However, for conditionFF the RTs do not differ as significantly with trials. This can be seen from the almost straight line of the RTs for conditionFF throughout the trials. But it can be seen that the pattern for RTs is different for each condition. It is unclear whether this difference is over the trials or due to difference in intercept of the conditions.
+
+The difference plots for conditionRD and conditionDR show significant difference in RTs between trials 70 - 129 and trials 210 - 291 approximately. 
+
+The difference plots for conditionRD and conditionFF show significant difference in RTs between trials 63 - 144 approximately. 
+
+The difference plots for conditionDR and conditionFF show significant difference in RTs between trials 173 - 309 approximately. 
+
+The influence of the long intervals is significant for the estimation of short intervals. This can be seen from the pattern of the RTs for each condition as shown in the summed effects plot. For instance, the estimated RTs in condition DR has alternating peaks and troughs corresponding to the change in the long intervals over trials. This can also be seen for conditions FF and RD. 
+
+It is unclear whether non-linear interaction between conditions and trials is different due to the difference in their average RTs in each condition or whether there is trend difference over the trials. However, since each condition shows a different pattern, this non-linear interaction seems significant.
+
+
+**Run a model-comparison procedure with the function compareML to determine the best-fitting model. Include the following in your R Markdown report**
+
+```{r, echo=TRUE}
+#model with non-linear interaction between trial and condition as fixed effect
+m1 <- bam( RT ~ Condition + s(Trial, by = Condition), method="ML", data=dat)
+summary(m1)
+
+#model without non-linear interaction between trial and condition
+c2 <- bam( RT ~ Condition, method="ML", data=dat)
+summary(c2)
+
+compareML(m1, c2)
+```
+
+
+Model comparison is done to check the significance of the non-linear interaction between trial and condition. The model comparison test shows a significant difference between the models, X2 (6) = 44.620, p < 2.2e-16. It can be seen that by spending 6 additional degree of freedom, the deviance drops by 44.620. This means that our model m1 with non-linear interaction fits the data better. Now, I shall manually model Condition using dummy predictors for DR and RD to compare it with the FF condition and check whether the conditions differ from each other over trials (here, I'm checking if they differ from FF).
+
+```{r, echo=TRUE}
+#check contrast
+contrasts(dat$Condition)
+
+#dummy predictors for RD and DR conditions:
+dat$RD <- ifelse(dat$Condition=='RD', 1, 0)
+dat$DR <- ifelse(dat$Condition=='DR', 1, 0)
+#dat$FF <- ifelse(dat$Condition=='FF', 1, 0)
+
+model1 <- bam( RT ~  s(Trial) + s(Trial, by = DR) + s(Trial, by = RD), data=dat)
+summary(model1)
+```
+
+In the above model, the non-linear smooths show the difference in RTs over trial in comparison to the reference level (conditionFF). This suggests that the conditions follow a different trend over trials. Thus model m1 with the non-linear interaction should be used with random effects to account for subject variability.
+
+```{r, echo=TRUE}
+m2 <- bam( RT ~ Condition +  s(Trial, by = Condition) + s(Trial, Subject, bs='fs', m=1), data=dat)
+summary(m2)
+```
+
+
+## Question 5: Alternative analyses 1
+**Setup a GAMM model that includes the nonlinear effect of prev.Dur, and include random effects. Include the following in your R Markdown report:the code for the model; a short explanation of why you included these model terms, and why you decided to leave out other terms (if any); a short summary of the effect of prev.Dur, illustrated with an appropriate plot.**
+
+```{r, echo=TRUE}
+#check for NA value 
+sum(is.na(dat$prev.Dur[dat$Condition == 'RD']))
+sum(is.na(dat$prev.Dur[dat$Condition == 'DR']))
+sum(is.na(dat$prev.Dur[dat$Condition == 'FF']))
+
+#removing the NA values
+dat <- na.omit(dat)
+range(dat$prev.Dur)
+mean(dat$prev.Dur)
+```
+
+
+```{r, echo=TRUE}
+m3  <- bam( RT ~ s(prev.Dur, by = Condition) + s(Trial, Subject, bs='fs', m=1), data=dat)
+summary(m3)
+
+#with binary coding
+m4  <- bam( RT ~ s(prev.Dur, by = RD) + s(prev.Dur, by = DR) + s(Trial, Subject, bs='fs', m=1), data=dat)
+summary(m4)
+
+```
+
+
+```{r, echo=TRUE}
+#visualization for model m3
+par(mfrow=c(1,3), cex=0.7)
+# PLOT 1
+qqnorm(resid(m3), pch=16, col=alpha("#00B0F0"))
+qqline(resid(m3))
+
+# PLOT 2
+emptyPlot(c(1800, 2600), c(-300, 300),
+    h0=0,
+    xlab="Fitted", ylab="Resid",
+    xmark=TRUE, ymark=TRUE, las=1)
+points(fitted(m3), resid(m3), pch=16, col=alpha("#00B0F0"))
+
+# PLOT 3
+acf(resid(m3))
+```
+
+
+
+**a short explanation of why you included these model terms, and why you decided to leave out other terms (if any);**
+
+A non-linear interaction between prev.dur and Condition is added to check if the RTs differ based on previous duration for different conditions. The non-linear interaction between consition and trial is left out because I specifically wanted to check just the influence of the prev.Duration on the RTs for each condition. Since the hypothesis is to test whether long intervals (varied across conditions) affect the short intervals. This model seemed appropriate.
+
+**a short summary of the effect of prev.Dur, illustrated with an appropriate plot.**
+
+```{r, echo=TRUE}
+#plot with prev.Dur
+plot_smooth(m3, view="prev.Dur", plot_all="Condition")
+```
+
+
+## Alternative analysis 2:
+
+We turn back to our original implementation, which included Trial and Condition, instead of prev.Dur. This time we would like to analyze the participant averages per block rather than including all trials.
+
+**Construct a new data frame with per participant and per block the following information:the average reaction times (column RT); the number of measurements (i.e., the number of observations the average RT was based on); the condition (column Condition). Include the code and the first lines of the data frame in your report.**
+
+```{r, echo=TRUE}
+newdat <- ddply(dat, c("Subject", "Block", 'Condition'), 
+             summarise,
+            RT = mean(RT),
+            num = length(Trial))
+head(newdat)
+```
+
+**Setup a GAMM model (including random effects) to analyze the data, and run the model. Include the following in your report: the code for the model; a short summary of the estimated effects of the model (include plots).**
+
+```{r, echo=TRUE}
+p1 <- bam(RT ~ s(Block, by=Condition, k=4) + s(Subject, Block, bs='fs', m=1, k=4), data = newdat )
+summary(p1)
+
+```
+
+
+```{r, echo=TRUE}
+# PLOT 1
+qqnorm(resid(p1))
+qqline(resid(p1))
+# PLOT 2:
+plot(fitted(p1), resid(p1))
+abline(h=0)
+plot(newdat$Block, resid(p1))
+abline(h=0)
+# PLOT 3:
+acf(resid(p1))
+#smooth plot showing the RTs by condition
+plot_smooth(p1, view="Block", plot_all="Condition")
+#create histogram of residuals m2
+ggplot(data = newdat, aes(x = p1$residuals)) +
+    geom_histogram(fill = 'steelblue', color = 'black') +
+    labs(title = 'Histogram of Residuals p1', x = 'Residuals', y = 'Frequency')
+#check normal distribution graph for residuals of m2
+check_normaldist(p1$residuals, xlab = 'reaction time (ms)', title = 'residuals distribution p1')
+#boxplot
+boxplot(resid(p1) ~ newdat$Block)
+abline(h=0)
+
+##Summary plots
+par(mfrow=c(1,3), cex=0.7)
+# PLOT 1
+qqnorm(resid(p1), pch=16, col=alpha("#00B0F0"))
+qqline(resid(p1))
+
+# PLOT 2
+emptyPlot(c(1800, 2600), c(-300, 300),
+    h0=0,
+    xlab="Fitted", ylab="Resid",
+    xmark=TRUE, ymark=TRUE, las=1)
+points(fitted(p1), resid(p1), pch=16, col=alpha("#00B0F0"))
+
+# PLOT 3
+acf(resid(p1))
+
+```
+
+
+The smooth plot shows the trend of RTs for different conditions over the 9 blocks. The confidence intervals are much broader and are throughout the blocks with more narrow confidence intervals around block 5. For the FF condition there is higher uncertainty during the beginning and ending blocks. This holds for the other conditions. Moreover, for RD and DR, during troughs the uncertainty is higher.
+
+
+Further transformations is necessary because the ACF plot shows a correlation. Thus the following random effects and random slopes are added to reduce the correlation.
+
+```{r, echo=TRUE}
+
+#adding random effects and slopes
+f1 <- bam(RT ~ s(Block, by=Condition, k=4) + s(Subject, bs='re') + s(Subject, Block, bs='re') + s(Block, num, bs='fs', m=1, k=4), data = newdat, method = 'ML' )
+summary(f1)
+
+
+#VISUALIZATION
+par(mfrow=c(1,3), cex=0.8)
+# PLOT 1
+qqnorm(resid(f1), pch=16, col=alpha("#00B0F0"))
+qqline(resid(f1))
+
+# PLOT 2
+emptyPlot(range(fitted(f1)), range(resid(f1)),
+    h0=0,
+    xlab="Fitted", ylab="Resid",
+    xmark=TRUE, ymark=TRUE, las=1)
+points(fitted(f1), resid(f1), pch=16, col=alpha("#00B0F0"))
+
+# PLOT 3
+acf(resid(f1))
+
+```
+
+
+```{r, echo=TRUE}
+#compare ACF
+acf(resid(p1))
+acf(resid(f1))
+```
+
+From the ACF plots it can be seen that the ACF value drops significantly. Thus, the model f1 with random effects and slopes is better. 
+
+
+**Compare this analysis (i.e., participant averages per block) with our original analysis (i.e., including all observations). Are the conclusions the same? What are the advantages/disadvantages of these analyses?**
+
+```{r, echo=TRUE}
+summary(m2)
+summary(f1)
+```
+
+The model with all observation (m2) accounts for the difference in RTs over the trials. On the other hand, f1 indicates the difference in RTs for conditions over each block. Here each block is a mini-time series and can better show the trend over trials and participant. Moreover, the non-linear trend between subjects and blocks captures a variance of each subject for a particular time-series performed.

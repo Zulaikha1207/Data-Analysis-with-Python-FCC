@@ -1,0 +1,216 @@
+---
+title: "Assignment 4"
+author: "Zulikah Latief"
+date: "12/17/2021"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r}
+#Set up working directory
+rm(list=ls())
+setwd('~/MSC AI/MSC AI YEAR 2/Adv stats/R programming/s4273281_assignment4')
+```
+
+```{r,echo=FALSE}
+#load libraries
+library(plyr)
+library(plotfunctions)
+library(lme4)
+library(dplyr)
+```
+
+```{r, echo=TRUE}
+#load data
+load("data_TVJT.rda")
+head(dat, 10)
+
+# first exclude the control items:
+dat <- droplevels(dat[dat$SentenceType!="control",])
+```
+
+
+## Question 1: Descriptive statistics [5pt]
+
+**Question 1a: Descriptive statistics. First, you are asked to check the structure of the data. Include the code in your report and a description in words of the structure of the data.**
+
+The experiment has 2 blocks, with 20 trails per block. There are a total of 39 participants taking part in a within-subject study that has two conditions, namely slow speech and normal speech. Each subject takes part in 16 trails per condition, which makes a total of 32 trails/ subject. Furthermore, each condition can vary in the sentence type, with equal amount of observations for both the sentencetype (him and himself). This is also the case for trailtype. Each condition has equal number of observations for both trailtype (congruent and incongruent). 
+
+```{r, echo=TRUE}
+#number of subjects 
+n_distinct(dat$Subject)
+
+#subjects by condition
+table(dat$Condition, dat$Subject)
+
+#Item by condition, trail type and sentence type 
+table(dat$Condition, dat$TrialType, dat$Item)
+table(dat$Condition, dat$SentenceType, dat$Item)
+```
+
+There are a total of 8 items. Each item, is presented in both the slow and normal speech rates for all participants. Furthermore, each item is modified in its sentence type and presented with 'him' and 'himself' for both conditions and for all participants. Moreover,  items are presented as either congruent or in-congruent across both conditions. Except for item 3 and 8 which are presented as congruent for 1 condition and in-congruent for the other with equal number of trails per condition. Overall the data is balanced with equal number of observations per condition, per sentencetype and per trail type.
+
+---------------------------------------------------------------------------------
+
+```{r, echo=TRUE}
+#Split binary accuracy into two columns, namely A0 and A1
+ndat <- ddply(dat, c("Subject", "Group", "Block", "Trial", "Condition", "SentenceType", "TrialType", "Item", "Accuracy"), 
+             summarise,
+            A1 = sum(Accuracy=='1'),
+            A0 = sum(Accuracy=='0'),
+            Acc.Score = cbind(A1, A0))
+
+head(ndat)
+```
+
+**Question1b: Calculate the 8 averages per participant (i.e., proportion of answers that were correct), for the combination of the predictors SentenceType, TrialType, and Condition**
+
+```{r, echo=TRUE}
+agg1 <- ddply(ndat, c("Subject", "Condition", "SentenceType",  "TrialType"),
+              summarize,
+              meanAcc = mean(A1))
+
+head(agg1)
+```
+
+**Question1b: Calculate in a new data frame the overall means for the 8 conditions based on the participant means calculated in the previous bullet point.**
+
+```{r, echo=TRUE}
+agg2 <- ddply(agg1, c("Subject"), 
+              summarize,
+              meanAcc = mean(meanAcc))
+head(agg2)
+```
+
+**Question1b: Also calculate the SE (standard error of the mean) for the 8 conditions based on the participant means calculated in the previous bullet point. **
+
+```{r, echo=TRUE}
+agg2 <- ddply(agg1, c("Subject"), 
+              summarize,
+              SE = se(meanAcc),
+              meanAcc = mean(meanAcc))
+head(agg2)
+```
+**Now visualize the 8 condition averages (i.e., the combination of the predictors SentenceType, TrialType, and Condition) that you have calculated in question 1b. **
+
+```{r, echo=TRUE}
+barplot(agg1$meanAcc[agg1$Condition=='normal_speech'], col = ifelse(agg1$SentenceType=='him', 4, 1), pch=19, 
+       xlab = "Subjects",ylab ="Mean Accuracy",
+       main = "Mean Accuracy by trial", space=1)
+
+#lines(agg1$meanAcc, type="b", pch=19, 
+      #col= ifelse(agg1$SentenceType=='him', 4, 1))
+
+```
+## Question 2: Random intercepts model
+
+**Set up a linear mixed-effects regression model that models whether participants were more accurate (Accuracy, the dependent variable) depending on the SentenceType (SentenceType), TrialType (TrialType), and Speech rate condition (Condition). Include all fixed-effect interactions as well as random intercepts for participants and items.**
+
+```{r, echo=TRUE}
+
+library(lme4)
+m1 <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1|Subject) + (1|Item), data = ndat, family = binomial)
+summary(m1)
+```
+
+**Question 2b: 
+
+
+What does the intercept represent? And what can you conclude from the value of the intercept?
+
+Intercept represents the approximate average accuracy (A1) for SentenceTypehim and TrialTypecongruent under the normal_speech rate condition in the log odds scale.  The positive value of 1.3044 represents that the average accuracy in trails with SentenceType = him, TrialType = congruent and condition = normal_speech is high in contrast with trails where SentenceType = himself, TrialType = incongruent and condition = slow_speech.
+
+Explain in your own words: How do the random intercepts for Subject and Item change the model estimates?
+
+While the fixed effects account for the overall variance in data due to the different experimental conditions and variables, they don't account for the variance due to individual subjects or items. The random intercept for subject and item denote the effect of individual subjects and individual items on the accuracy. For instance, the  fixed effect intercept represents the avg accuracy across various conditions for all subjects and items. However, the intercept does not capture how the accuracy varies for each subject or each item. This additional random effect of the subjects and items is captured by the random intercepts. Thus in order to explain the variance due to each subject and each item, the model intercepts would have to be adjusted (added/subtracted) according to the values of the random intercepts for the respective subjects and items.
+
+Looking at the random effects summary, which of the two random intercepts do you think is most important? (Explain why.)
+
+The random effect associated with subject is more important because it has a higher associated variance value. This means that there is high variance in the data due to the different subjects. A lower value indicates that the random effect attributes to a low amount of variance in the data, which means it cannot explain a lot of the variance in the data.
+
+## Question 3: Random slopes
+
+Before investigating the fixed-effects, we will check whether we can improve the model by including random slopes.
+
+**Make a list (in words or code, without running the model) of the predictors that could potentially function as random slopes for Subjects and Items. Explain what type of predictors / which predictors are less/not suited to include as random slopes.**
+
+ ( 1 + TrailType| Subject) This would tells us how the subjects differ while responding to different trial types. For instance, does subject 1 respond more incorrectly than subject2 for the incongruent trial type. This however, will only express the difference between the different subjects in their response to trailtype. The aim of the study is not to understand that. It is to understand whether or not the subjects are more likely to respond incorrectly than correctly on incongruent trialtypes.
+
+(1+ SentenceType | Subject)
+
+(1 + Condition | Subject) - here we are checking whether the effect of the conditions (slow and normal) is different for different subjects. That is some subjects respond better to normal speech rate or slow speech rates than others. The only thing important in this experiment is to verify whether the subjects respond better when the speech rate is slow. This is already measured by the fixed effects. Therefore, having condition as a random slope for subject is not relevant for this study. 
+
+(1 + Trail | Subject) This would tell us whether subjects respond differently to different trails. This is not relevant for this experiment. The only time it could be relevant is if we want to check whether the subjects accuracy decreases towards the end of the experiment due to tiredness. 
+
+**Random slopes could be added in (at least) two different ways: 1+Slope or 0+Slope. Explain the difference in interpretation between these two different ways for categorical predictors. (Note that the interpretation of these two ways is different for continuous predictors.)**
+
+While using (0+Slope), the intercept of the random effect does not represent the value at the referential level. Instead, separate intercepts for each level of the categorical variable is produced.
+
+Whereas, for (1+Slope), the returned intercept value represents the random intercept at the referential level and the random slope as a difference between the referntial level and the other level of the categorical variable. The random intercept + random slope for the other levels of the categorical variable are represented as adjustments with respect to the referential level. 
+
+```{r, echo=TRUE}
+
+library(lme4)
+zx <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1|Item) +
+             (1+Condition|Subject), data = ndat, family = binomial)
+summary(zx)
+```
+
+```{r, echo=TRUE}
+
+library(lme4)
+zy <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1|Item) +
+             (0+Condition|Subject), data = ndat, family = binomial)
+summary(zy)
+```
+
+
+**Use model comparisons to determine which of the predictors from your list should be included as random slopes for Subject and/or Item. For this assignment, please do not add more than 1 slope per grouping predictor per model. Include the code for the model comparison procedure and your conclusions in your report, and clearly specify which random effects structure you think is the best (given the constraints of this assignment).**
+
+
+```{r, echo=TRUE}
+#checking for (0 + TrialType|Subject)
+m2 <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (0 + TrialType|Subject)
+             + (1|Item), data = ndat, family = binomial)
+summary(m2)
+```
+```{r, echo=TRUE}
+#checking for (1 + TrialType|Subject)
+m2x <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1 + TrialType|Subject)
+             + (1|Item), data = ndat, family = binomial)
+summary(m2x)
+```
+
+```{r, echo=TRUE}
+anova(m1, m2, m2x, refit= FALSE)
+
+```
+
+```{r, echo=TRUE}
+#checking for (0 + TrialType|Subject)
+m3 <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (0 + SentenceType|Subject)
+             + (1|Item), data = ndat, family = binomial)
+summary(m3)
+```
+
+```{r, echo=TRUE}
+#checking for (0 + TrialType|Subject)
+m3a <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (1 + SentenceType|Subject)
+             + (1|Item), data = ndat, family = binomial)
+summary(m3a)
+```
+
+
+```{r, echo=TRUE}
+rem2 <- ranef(m2)[['Subject']]
+rem2
+```
+```{r, echo=TRUE}
+#add sentencetype as a random slope for subject
+m2a <- glmer( Accuracy ~ SentenceType * TrialType * Condition + (0 + TrialType|Subject) +
+                (0+SentenceType| Subject) + (1|Item), data = ndat, family = binomial)
+             
+summary(m2a)
+```
+

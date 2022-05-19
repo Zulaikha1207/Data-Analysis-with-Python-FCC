@@ -1,0 +1,261 @@
+---
+title: "Assignment2"
+author: "Zulikah Latief (s4273281)"
+date: "12/12/2021"
+output: 
+  html_document:
+  toc: true
+---
+
+```{r}
+library(plyr)
+library(magrittr)
+library(dplyr) 
+library(plotfunctions)
+library(ggplot2)
+
+#set wd
+setwd('C:/Users/user/Documents/MSC AI/MSC AI YEAR 2/Adv stats/R programming/s4273281_assignment2')
+```
+
+## PART I: Data
+
+```{r, echo=TRUE}
+#load data
+dat <- read.table("data.txt", header = TRUE)
+head(dat)
+```
+
+**Question1a: As preparation for data analysis, generate a new data frame with per participant the following information:**
+
+* Subject
+* Item 
+* Age
+* Condition;
+* meanFamiliarity: average familiarity per participant over all items (using column Familiarity);
+* F1: number of idioms that were rated as familiar per participant (using column Familiarity);
+* F0: number of idioms that were rated as unfamiliar per participant (using column Familiarity).
+
+```{r, echo=TRUE}
+#subset data based on condition
+study1<- subset(dat, dat$Condition == "Study1") 
+study2<- subset(dat, dat$Condition == "Study2") 
+
+#differentiate between subject IDs for the two conditions
+study2$Subject <- gsub('s', 'p', study2$Subject)
+
+#merge subsets
+dat2 <- rbind(study1, study2)
+
+#convert ratings to binary familiarity values
+dat2$Familiarity <- ifelse(dat2$Rating > 4, 1, 0)
+
+newdat <- ddply(dat2, c("Subject", "Condition", "Age", "Item"), 
+             summarise,
+            meanFamiliarity = mean(Familiarity),
+            F1 = length(Familiarity[Familiarity=='1']),
+            F0 = length(Familiarity[Familiarity=='0']))
+head(newdat)
+```
+
+**Visualize the average familiarity scores per age in a scatter plot. Differentiate between the averages from the two studies (i.e., column Condition), for example by using different points or colors.**
+
+```{r, echo=TRUE}
+#Average familiarity scores per age
+avg <- ddply(newdat, c("Age", "Condition"), 
+             summarise,
+            age_meanFamiliarity = mean(meanFamiliarity))
+head(avg)
+
+#plot
+emptyPlot(xlim=c(10, 90), ylim= c(0,1)) 
+title(main="Average familiarity scores per age", xlab="Age", ylab="Avg familiarity score")
+axis(side=1, at=seq(10, 90, by=10))
+points(avg$Age, avg$age_meanFamiliarity, 
+       pch=16, col=ifelse(avg$Condition=='Study1', 4, 1))
+
+legend_margin('centerright', legend = c("Study1", "Study2"),
+       col=c(4, 1), pch = c(16, 16))
+```
+
+**Calculate the average familiarity per age group (column AgeGroup) and study (column Condition). Add these averages as two lines (one line for each study) to the scatter plot. Include your code and the final plot in your report.**
+
+```{r, echo=TRUE}
+newdat$AgeGroup <- (floor(newdat$Age / 10)+.5)*10
+
+# print age range per age group:
+agerange <- function(x){
+  return(paste(range(x), collapse="-"))
+}
+tapply(newdat$Age, list(newdat$AgeGroup), agerange)
+
+#average familiarity per age group
+avgfam_age_grp <- ddply(newdat, c("AgeGroup", "Condition"), 
+             summarise,
+            age_grp_meanFamiliarity = mean(meanFamiliarity))
+head(avgfam_age_grp)
+
+#average familiarity per condition
+avgfam_cond <- ddply(newdat, c("Condition"), 
+             summarise,
+            condition_meanFamiliarity = mean(meanFamiliarity))
+
+#plot
+emptyPlot(xlim = c(10, 90), ylim = c(0,1)) 
+title(main="Average familiarity scores per age group", xlab="Age Group", ylab="Avg Familiarity Score")
+axis(side=1, at=seq(10, 90, by=10))
+points(avgfam_age_grp$AgeGroup, avgfam_age_grp$age_grp_meanFamiliarity, pch=16,
+        col=ifelse(avgfam_age_grp$Condition=='Study1', 4, 1))
+
+abline(h=avgfam_cond$condition_meanFamiliarity,     col=ifelse(avgfam_cond$Condition=='Study1', 4, 1))
+legend_margin('centerright', legend = c("Study1", "Study2"),
+       col=c(4, 1), pch = c(16, 16))
+```
+
+## PART II: Analysis
+
+```{r, echo=TRUE}
+#binomial counts pairs for a logistic regression model
+newdat$Familiarity <- cbind(newdat$F1, newdat$F0)
+
+# compare `head` and `View` - what do you notice?
+head(newdat)
+View(newdat)
+
+# access 1 count pair:
+newdat$Familiarity[1,]
+newdat$Familiarity[1,1]
+newdat$Familiarity[1,2]
+
+#center around mean of age
+newdat$cAge <- newdat$Age - 40
+```
+
+**Question 2a: Setup a generalized linear model to investigate (or examine) whether the effect of Age on idiom familiarity differs for the two studies.**
+
+```{r, echo=TRUE}
+lm1 <- glm(Familiarity ~ cAge + Condition + cAge:Condition, data=newdat, family=binomial)
+cf<-coef(lm1)
+cf
+```
+
+**Question2b: Run the summary of model lm1. Explain in words what the different estimates represent.**
+
+```{r, echo=TRUE}
+#summary of glm1
+summary(lm1)
+```
+
+The coefficients are all in a logit scale. The intercept represents the log odds value of the familiarity success (f1) when cAge is 0 (this is the mean age of the participants, i.e., 40) in study 1. Furthermore, the corresponding z-value tells us that the estimate is significantly different from zero.
+
+The positive coefficient of cAge indicates that the probability of familiarity success (f1) (or to be more precise, the odds of familiarity success (f1)) goes up with age for study condition 1. Furthermore, the corresponding z-value tells us that the estimate is significantly different from zero.
+
+The negative coefficient of ConditionStudy2 indicates that the probability of familiarity success (f1) goes down in study2 when compared to study1.Furthermore, the corresponding z-value tells us that the estimate is significantly different from zero.
+
+The negative coefficient of the interaction term cAge:ConditionStudy2 indicates that as cAge increases, the probability of familiarity success (f1) goes down for study2 in contrast to study1. Furthermore, the corresponding z-value tells us that the estimate is significantly different from zero.
+
+**Question2c: Draw a plot of the regression line(s) estimated by model lm1. Explain in words your conclusion about the effects of age for the two studies: are these trends different? Use the summary statistics and the plot for your answer.**
+
+The plot shows that while there is an overall increase in familiarity score (f1) with age, it differs for the two conditions. For condition study1, the slope is steeper, which means that as age increases the increase in familiarity success is much higher when compared to study2. For study2, the increase in familiarity success with age is lower than for study1. This was also evident from the summary statistics. The coefficient for the interaction between age and conditionstudy2 was negative, which indicates that as age increases, the familiarity success decreases in study2 in contrast to study1. This is evident from the slope of the lines.
+
+```{r, echo=TRUE}
+emptyPlot(c(-40, 50), c(-3,3),  v0=c(0,0), xlab = "Centered Age",
+          ylab="Familiarity Score (Logit scale)", axes=FALSE)
+axis(1, at=c(-40, 0, 50), las=1)
+#axis(side=1, at=seq(-40, 50, by=10))
+axis(2, at=c(-3, 0, 3), las=1)
+
+# regression line:
+# Study1 is reference level:
+abline(a=cf[1], b=cf['cAge'], col='dodgerblue2', lwd = 1.5)
+text(x=max(newdat$cAge), y=cf[1]+cf['cAge']*max(newdat$cAge),
+     labels = ('Study1'),
+     col = 'dodgerblue2', pos=4, xpd=TRUE)
+
+#Study2 
+abline(a=cf[1]+cf['ConditionStudy2'], 
+         b=cf['cAge']+cf["cAge:ConditionStudy2"], 
+         col='black', lwd = 1.5)
+text(x=max(newdat$cAge), 
+       y=cf[1]+cf['ConditionStudy2']+
+       (cf['cAge']+cf["cAge:ConditionStudy2"])*max(newdat$cAge), 
+       labels=('Study2'), 
+       col='black', pos=4, xpd=TRUE)
+
+```
+
+## Question 3: Checking model assumptions
+
+**Check each of the following regression assumptions using plots/visualizations of the residuals and describe your conclusions for the model fit. Include the R code and your conclusions in your Markdown report.**
+
+a)Assumption: The residuals are normally distributed
+
+```{r, echo=TRUE}
+qqnorm(resid(lm1))
+qqline(resid(lm1))
+```
+
+The qqplot clearly shows that the residuals do not follow a normal distribution. Furthermore, you can see that the residuals are centered around two different range of values. This can be due to the two different conditions in the study.
+
+
+b)Assumption: There’s no structure left in the residuals is false because you see 4 lines representing different residual groups. The clustering of residuals (2 lines below zero) below zero and above zero can be explained by the range of the response variable. Whereas, the 2 lines that are closer together may represent different conditions. Overall, there is a clear pattern/structure in the residuals.
+
+```{r, echo=TRUE}
+#plot for fitted vs residual values
+par(mfrow=c(1,2), cex=1.1)
+# 'normal' plot:
+emptyPlot(range(fitted(lm1)), range(resid(lm1)),
+          xlab="Fitted", ylab="Resid", 
+          xmark=TRUE, ymark=TRUE, las=1)
+points(fitted(lm1), resid(lm1), pch=16, col=alpha("#FF0000"))
+
+```
+
+c)Assumption: There’s no heteroscedasticity does not hold because you can indeed see in the plot that the variance of the residuals is non-linear and does not remain constant with the mean. Furthermore, it can be seen that the variance is following the variance function. This can be checked by looking at the dispersion. Our data shows that the dispersion is indeed close to 1, thereby indicating that the variance in the data fits the variance function.
+
+```{r, echo=TRUE}
+check_normaldist(resid(lm1))
+
+#check for dispersion
+dp <- sum(residuals(lm1, type="pearson")^2)/lm1$df.res
+dp
+```
+
+**d)Explain the problem of modeling this particular data set with a linear regression model using the binary predictor dat$Familiarity (instead of using subdat$Familiarity)?**
+
+The problem with binary predictor is in modelling repeated measures of same subjects and same items which violates the 'independence of each data points' assumption. Thus, binomial data, i.e., count data is preferred.
+
+```{r, echo=TRUE}
+lm1b <- glm(Familiarity ~ Age + Condition + Age:Condition, data=dat2, family=binomial)
+
+```
+
+## Question 4: Model comparisons
+
+**Use model comparisons to investigate whether the effect of age on idiom familiarity is different in the two studies. Include in your markdown report the code for the models and model comparison tests, and explain after each comparison why you compared these two models and what are your conclusions based on the comparison results.**
+
+Use residual deviance as a measure for goodness of fit and model comparision. By using the Rule of thumb: RD/(n - p) for residual deviance, we get a value >1 for both the models, which would indicate that the predictor variables of both models do not do aa good job of explaining the dependent variable.
+
+```{r, echo=TRUE}
+lm0 <- glm(Familiarity ~ cAge + Condition, data=newdat, family=binomial)
+summary(lm0)
+summary(lm1)
+
+#Using Rule of thumb: RD/(n - p) for lm0
+RD_lm0<- 39387/33830
+RD_lm0
+
+#Using Rule of thumb: RD/(n - p) for lm1
+RD_lm1<- 39322/33829
+RD_lm1
+```
+
+AIC scores: The model with the interaction term (lm1) shows a lower AIC score which means that lm1 reduces complexity and maximizes good fit.
+
+Use ANOVA test: The comparison will be done between lm0 and lm1 (defined above). Since these models differ in the use of the interaction term 'Age:Condition', the ANVOA will evaluate whether or not including the interaction term leads to a significant improvement over using just the main effects. In other words, it will test the significance of the effect of age on idiom familiarity for the two experimental conditions.
+
+```{r, echo=TRUE}
+anova(lm0, lm1, test="Chisq")
+```
+
+A chi-square test was performed to examine the effect of age on idiom familiarity in different conditions. The effect was significant, X2 (1) = 64.763, p = 8.448e-16. This indicates that the effect of age on idiom familiarity varies for the two conditions. Furthermore, from the chi-square test it can be seen that by spending one additional degree of freedom, the deviance drops significantly. This means that our model 2 better fits the data.  
